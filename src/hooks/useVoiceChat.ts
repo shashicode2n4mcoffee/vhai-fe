@@ -81,8 +81,8 @@ export interface VoiceChatOptions {
 // Config defaults — API key is fetched from backend
 // ---------------------------------------------------------------------------
 
-/** Industry standard: wait for 1+ second of silence before considering user done (reduces AI interrupting mid-answer). */
-const SILENCE_BEFORE_RESPONSE_MS = 1200;
+/** Wait for 1 second of silence before giving the AI the turn (triggers next question); avoids triggering on full stop / punctuation. */
+const SILENCE_BEFORE_RESPONSE_MS = 1000;
 
 const DEFAULT_CONFIG: GeminiLiveConfig = {
   apiKey: "", // Will be fetched from backend
@@ -163,7 +163,7 @@ function buildSystemInstruction(
     "7. Probe deeper with follow-up questions when the candidate gives shallow answers.",
     "8. Keep your responses short and conversational — this is a real-time voice interview.",
     "9. Start by briefly introducing yourself as Christie and the role, then begin with the first question.",
-    "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words, or when they are thinking. The system will only give you the turn after about 1.2 seconds of continuous silence — wait for that. If they are silent for a long moment (e.g. 3+ seconds), then you may gently prompt. Never start speaking while they might still be in the middle of a sentence.",
+    "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words ('um', 'uh', 'let me think'), or when they are mid-sentence. The system gives you the turn only after about 1 second of continuous silence — you must wait for that. If they are silent for a long moment (e.g. 4+ seconds), then you may gently prompt. Never start speaking while they might still be in the middle of a sentence or thought.",
     "11. Conduct the entire interview in English only. All speech and transcript must be in English only — no exceptions.",
     "12. Do NOT limit yourself to 15 questions. Ask as many relevant questions as fit within the 15-minute session.",
     "",
