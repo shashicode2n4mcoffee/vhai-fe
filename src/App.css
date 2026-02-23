@@ -5156,6 +5156,20 @@ a.dash__topbar-btn {
   max-width: 400px;
 }
 
+.report-error__hint {
+  font-size: 0.9rem;
+  color: var(--text-muted);
+  margin-top: 4px;
+}
+
+.report-error__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+  margin-top: 16px;
+}
+
 /* ===================================================================
    Evaluation Report — New Styles
    =================================================================== */

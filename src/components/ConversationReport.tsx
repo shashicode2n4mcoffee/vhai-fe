@@ -149,6 +149,48 @@ function ReportInner({
     }
   }, [interviewId]);
 
+  const handleRegenerateFromStorage = useCallback(async () => {
+    const backup = getTranscriptBackup();
+    if (!backup?.transcript?.length || !backup.template) {
+      toastRef.current.error("No saved transcript found on this device. Try again from the same browser where you completed the interview.");
+      return;
+    }
+    const merged: TranscriptEntry[] = [...backup.transcript];
+    if (backup.pendingUserText.trim()) {
+      merged.push({
+        id: `user-retry-${Date.now()}`,
+        role: "user",
+        text: backup.pendingUserText.trim(),
+        timestamp: backup.savedAt,
+      });
+    }
+    if (backup.pendingAssistantText.trim()) {
+      merged.push({
+        id: `assistant-retry-${Date.now()}`,
+        role: "assistant",
+        text: backup.pendingAssistantText.trim(),
+        timestamp: backup.savedAt,
+      });
+    }
+    setError("");
+    setStatus("loading");
+    const tid = toastRef.current.loading("Regenerating report from saved data...");
+    try {
+      const result = await generateReport(merged, backup.template);
+      setReport(result);
+      setStatus("done");
+      toastRef.current.update(tid, "success", "Report generated successfully from saved data!");
+      onReportGenerated();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setError(msg);
+      setStatus("error");
+      toastRef.current.update(tid, "error", `Report failed again: ${msg}`);
+      const { logErrorToServer } = await import("../lib/logError");
+      logErrorToServer(msg, { details: err instanceof Error ? err.stack : undefined, source: "interview_report_retry" });
+    }
+  }, [onReportGenerated]);
+
   useEffect(() => {
     let cancelled = false;
     const tid = toastRef.current.loading("Generating evaluation report...");
@@ -303,9 +345,17 @@ function ReportInner({
         <div className="report-error">
           <h2>Report Generation Failed</h2>
           <p>{error}</p>
-          <button className="btn btn--start" onClick={onBackToDashboard}>
-            Back to Dashboard
-          </button>
+          <p className="report-error__hint">
+            Your transcript is saved on this device. You can try regenerating the report from that saved data.
+          </p>
+          <div className="report-error__actions">
+            <button type="button" className="btn btn--primary" onClick={handleRegenerateFromStorage}>
+              Regenerate from saved data
+            </button>
+            <button type="button" className="btn btn--secondary" onClick={onBackToDashboard}>
+              Back to Dashboard
+            </button>
+          </div>
         </div>
       </div>
     );

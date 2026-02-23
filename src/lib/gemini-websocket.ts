@@ -472,9 +472,10 @@ export class GeminiWebSocketClient {
         automaticActivityDetection: {
           disabled: false,
           startOfSpeechSensitivity: "START_SENSITIVITY_HIGH",
-          endOfSpeechSensitivity: "END_SENSITIVITY_LOW", // Wait for user to finish; don't treat brief pauses as end-of-turn
+          // End-of-speech: require clear pause so AI doesn't interrupt mid-answer (industry standard ~1–1.5s silence).
+          endOfSpeechSensitivity: "END_SENSITIVITY_LOW",
           prefixPaddingMs: this.config.prefixPaddingMs,
-          silenceDurationMs: this.config.silenceDurationMs,
+          silenceDurationMs: this.config.silenceDurationMs, // e.g. 1200ms = wait 1.2s silence before model responds
         },
       },
       inputAudioTranscription: {},
