@@ -1,13 +1,23 @@
 /**
  * ProfessionalInterviewSession — LiveKit video room + Gemini Live voice interview.
- * Receives token, url, roomName from location.state (from ProfessionalConsentPage).
+ * Receives token, url, roomName, dataSaver from location.state (from ProfessionalConsentPage).
  * Template is taken from Redux (set by TemplateForm professional variant).
+ * Features: connection quality indicator, reconnection overlay, optional data saver (lower video).
  */
 
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate, useLocation, Navigate } from "react-router-dom";
-import { LiveKitRoom, RoomAudioRenderer, TrackLoop, useTracks, ParticipantTile } from "@livekit/components-react";
-import { Track } from "livekit-client";
+import {
+  LiveKitRoom,
+  RoomAudioRenderer,
+  TrackLoop,
+  useTracks,
+  ParticipantTile,
+  useConnectionState,
+  useEnsureRoom,
+} from "@livekit/components-react";
+import { Track, ConnectionState, ConnectionQuality, ParticipantEvent, VideoPresets } from "livekit-client";
+import type { NetworkQuality } from "../store/interviewSlice";
 import { useVoiceChat } from "../hooks/useVoiceChat";
 import { ConnectionStatus } from "./ConnectionStatus";
 import { setInterviewResult } from "../store/interviewSlice";
@@ -15,7 +25,7 @@ import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { selectTemplate, selectGuardrails } from "../store/interviewSlice";
 import { saveTranscriptBackup } from "../lib/transcriptBackup";
 
-const MAX_DURATION_MS = 15 * 60 * 1000;
+const MAX_DURATION_MS = 30 * 60 * 1000;
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -24,19 +34,94 @@ function formatTime(ms: number): string {
   return `${String(min).padStart(2, "0")}:${String(sec).padStart(2, "0")}`;
 }
 
+function connectionQualityToNetworkQuality(q: ConnectionQuality): NetworkQuality {
+  switch (q) {
+    case ConnectionQuality.Excellent:
+    case ConnectionQuality.Good:
+      return "stable";
+    case ConnectionQuality.Poor:
+      return "moderate";
+    case ConnectionQuality.Lost:
+    case ConnectionQuality.Unknown:
+    default:
+      return "poor";
+  }
+}
+
+/** Worst quality has highest rank for display (poor > moderate > stable) */
+function worstQuality(a: NetworkQuality, b: NetworkQuality): NetworkQuality {
+  if (a === "poor" || b === "poor") return "poor";
+  if (a === "moderate" || b === "moderate") return "moderate";
+  return "stable";
+}
+
 interface SessionState {
   token: string;
   url: string;
   roomName: string;
+  dataSaver?: boolean;
 }
 
 function ProfessionalSessionInner() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
+  const room = useEnsureRoom();
+  const lkConnectionState = useConnectionState();
   const template = useAppSelector(selectTemplate);
   const guardrails = useAppSelector(selectGuardrails);
   const cameraTracks = useTracks([Track.Source.Camera]);
   const startedRef = useRef(false);
+  const [connectionQualityLabel, setConnectionQualityLabel] = useState<NetworkQuality>("stable");
+  const worstQualityRef = useRef<NetworkQuality>("stable");
+  const [reconnectMessage, setReconnectMessage] = useState<"reconnecting" | "back-online" | null>(null);
+  const reconnectMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Track worst LiveKit connection quality for report
+  useEffect(() => {
+    const local = room.localParticipant;
+    const update = (q: ConnectionQuality) => {
+      const nq = connectionQualityToNetworkQuality(q);
+      worstQualityRef.current = worstQuality(worstQualityRef.current, nq);
+      setConnectionQualityLabel(nq);
+    };
+    update(local.connectionQuality);
+    local.on(ParticipantEvent.ConnectionQualityChanged, update);
+    return () => {
+      local.off(ParticipantEvent.ConnectionQualityChanged, update);
+    };
+  }, [room]);
+
+  // Reconnection UI: show "Reconnecting…" / "Back online"
+  const prevLkStateRef = useRef(lkConnectionState);
+  useEffect(() => {
+    const wasReconnecting =
+      prevLkStateRef.current === ConnectionState.Reconnecting ||
+      prevLkStateRef.current === ConnectionState.SignalReconnecting;
+    const isReconnecting =
+      lkConnectionState === ConnectionState.Reconnecting ||
+      lkConnectionState === ConnectionState.SignalReconnecting;
+
+    if (isReconnecting) {
+      setReconnectMessage("reconnecting");
+    } else if (lkConnectionState === ConnectionState.Connected) {
+      if (wasReconnecting) {
+        setReconnectMessage("back-online");
+        if (reconnectMessageTimeoutRef.current) clearTimeout(reconnectMessageTimeoutRef.current);
+        reconnectMessageTimeoutRef.current = setTimeout(() => setReconnectMessage(null), 3000);
+      } else {
+        setReconnectMessage(null);
+      }
+    } else {
+      setReconnectMessage(null);
+    }
+    prevLkStateRef.current = lkConnectionState;
+    return () => {
+      if (reconnectMessageTimeoutRef.current) {
+        clearTimeout(reconnectMessageTimeoutRef.current);
+        reconnectMessageTimeoutRef.current = null;
+      }
+    };
+  }, [lkConnectionState]);
 
   const [state, actions] = useVoiceChat(
     template ?? undefined,
@@ -88,7 +173,13 @@ function ProfessionalSessionInner() {
     });
     const videoBlob = await actions.stop();
     const videoUrl = videoBlob ? URL.createObjectURL(videoBlob) : null;
-    dispatch(setInterviewResult({ transcript: finalTranscript, videoUrl }));
+    dispatch(
+      setInterviewResult({
+        transcript: finalTranscript,
+        videoUrl,
+        networkQuality: worstQualityRef.current,
+      }),
+    );
     navigate("/interview/report");
   }, [template, state.transcript, state.pendingUserText, state.pendingAssistantText, actions, dispatch, navigate]);
 
@@ -108,9 +199,23 @@ function ProfessionalSessionInner() {
     return <Navigate to="/interview/professional/new" replace />;
   }
 
+  const isReconnecting =
+    lkConnectionState === ConnectionState.Reconnecting || lkConnectionState === ConnectionState.SignalReconnecting;
+
   return (
     <div className="pro-session">
       <RoomAudioRenderer />
+      {reconnectMessage && (
+        <div
+          className={`pro-session__reconnect pro-session__reconnect--${reconnectMessage}`}
+          role="status"
+          aria-live="polite"
+        >
+          {reconnectMessage === "reconnecting"
+            ? "Reconnecting your call…"
+            : "Back online. Your interview is continuing."}
+        </div>
+      )}
       <div className="pro-session__layout">
         <div className="pro-session__video">
           <TrackLoop tracks={cameraTracks}>
@@ -120,8 +225,23 @@ function ProfessionalSessionInner() {
         <div className="pro-session__voice">
           <div className="pro-session__voice-header">
             <ConnectionStatus connectionState={state.connectionState} chatPhase={state.chatPhase} />
+            <span
+              className={`pro-session__network-badge pro-session__network-badge--${connectionQualityLabel}`}
+              title="LiveKit connection quality"
+            >
+              {connectionQualityLabel === "stable"
+                ? "Stable connection"
+                : connectionQualityLabel === "moderate"
+                  ? "Moderate"
+                  : "Poor connection"}
+            </span>
             <span className="pro-session__timer">{formatTime(state.elapsedMs)}</span>
-            <button type="button" className="btn btn--secondary btn--sm" onClick={() => void handleEnd()}>
+            <button
+              type="button"
+              className="btn btn--secondary btn--sm"
+              onClick={() => void handleEnd()}
+              disabled={isReconnecting}
+            >
               End Interview
             </button>
           </div>
@@ -173,13 +293,17 @@ export function ProfessionalInterviewSession() {
     );
   }
 
+  const videoOptions = sessionState.dataSaver
+    ? { resolution: VideoPresets.h360.resolution }
+    : true;
+
   return (
     <LiveKitRoom
       serverUrl={sessionState.url}
       token={sessionState.token}
       connect={true}
       audio={true}
-      video={true}
+      video={videoOptions}
       onDisconnected={() => {}}
       onError={(err) => console.error("[LiveKit]", err)}
       style={{ height: "100vh", display: "flex", flexDirection: "column" }}

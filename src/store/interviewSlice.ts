@@ -19,12 +19,17 @@ export interface OrgGuardrails {
   toxicityTerminateOnHigh: boolean;
 }
 
+/** LiveKit connection quality for Professional interview report */
+export type NetworkQuality = "stable" | "moderate" | "poor";
+
 interface InterviewState {
   template: ConversationTemplate | null;
   transcript: TranscriptEntry[];
   videoUrl: string | null;
   interviewId: string | null;
   guardrails: OrgGuardrails | null;
+  /** Set by Professional session; shown on report as "Network: Stable/Moderate/Poor" */
+  networkQuality: NetworkQuality | null;
 }
 
 const initialState: InterviewState = {
@@ -33,6 +38,7 @@ const initialState: InterviewState = {
   videoUrl: null,
   interviewId: null,
   guardrails: null,
+  networkQuality: null,
 };
 
 const interviewSlice = createSlice({
@@ -47,10 +53,14 @@ const interviewSlice = createSlice({
       action: PayloadAction<{
         transcript: TranscriptEntry[];
         videoUrl: string | null;
+        networkQuality?: NetworkQuality | null;
       }>,
     ) {
       state.transcript = action.payload.transcript;
       state.videoUrl = action.payload.videoUrl;
+      if (action.payload.networkQuality !== undefined) {
+        state.networkQuality = action.payload.networkQuality;
+      }
     },
     setInterviewId(state, action: PayloadAction<string>) {
       state.interviewId = action.payload;
@@ -69,6 +79,7 @@ const interviewSlice = createSlice({
       state.videoUrl = null;
       state.interviewId = null;
       state.guardrails = null;
+      state.networkQuality = null;
     },
   },
 });
@@ -82,5 +93,6 @@ export const selectTranscript = (state: RootState) => state.interview.transcript
 export const selectVideoUrl = (state: RootState) => state.interview.videoUrl;
 export const selectInterviewId = (state: RootState) => state.interview.interviewId;
 export const selectGuardrails = (state: RootState) => state.interview.guardrails;
+export const selectNetworkQuality = (state: RootState) => state.interview.networkQuality;
 
 export default interviewSlice.reducer;

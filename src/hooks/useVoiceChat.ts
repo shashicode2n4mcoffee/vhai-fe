@@ -9,7 +9,7 @@
  *
  * Interview constraints:
  *   - No question limit (for testing; was 15 in production)
- *   - Maximum 15 minutes
+ *   - Maximum 30 minutes
  *   - 3 minutes before timeout → AI wraps up
  */
 
@@ -34,13 +34,14 @@ import { clearTranscriptBackup, saveTranscriptBackup } from "../lib/transcriptBa
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_DURATION_MS = 15 * 60 * 1000;          // 15 minutes
+const MAX_DURATION_MS = 30 * 60 * 1000;          // 30 minutes
+const MAX_QUESTIONS = 15;                        // After 15 questions, trigger wrap-up and move to report
 const WRAP_UP_BEFORE_MS = 3 * 60 * 1000;         // 3 minutes before timeout
 const WRAP_UP_THRESHOLD_MS = MAX_DURATION_MS - WRAP_UP_BEFORE_MS; // 27 minutes
 /** If no audio and no turnComplete for this long while AI is "responding", commit pending and set listening (Section 9.2) */
 const TURN_COMPLETE_TIMEOUT_MS = 15_000;
-/** After sending wrap-up signal, if onWrapUpComplete hasn't fired by this time, fire it anyway (guarantee auto-end) */
-const WRAP_UP_FALLBACK_MS = 40_000;
+/** After sending wrap-up signal, allow up to this long for AI to say closing statement, then auto-end and move to report */
+const WRAP_UP_FALLBACK_MS = 30_000;               // 30 seconds
 
 // ---------------------------------------------------------------------------
 // Hook return type
@@ -126,13 +127,15 @@ function buildSystemInstruction(
   guardrails?: OrgGuardrails | null,
 ): string {
   if (!template) {
-    return "You are a helpful, friendly, and concise AI voice assistant. Speak only in English. Keep responses short and conversational. Respond naturally as in a voice conversation.";
+    return "You are a helpful, friendly, and concise AI voice assistant. Speak only in English. Never switch to any other language. Keep responses short and conversational. Respond naturally as in a voice conversation.";
   }
   const doNotAsk = buildDoNotAskBlock(guardrails ?? null);
   return [
+    "LANGUAGE (NON-NEGOTIABLE): This session is ENGLISH ONLY. You MUST always speak in English and the transcript must always be in English. Do NOT switch to any other language at any time. The user will speak in English; you must respond only in English. If the candidate speaks in another language, say briefly in English (e.g. 'Please continue in English so we can keep the transcript consistent') and carry on in English. Never use or transcribe in another language.",
+    "",
     "You are an AI interviewer conducting a real-time voice interview. Your name is Christie. Follow ALL rules below STRICTLY.",
     "",
-    "LANGUAGE AND TRANSCRIPT (STRICT): The transcript must ALWAYS be in English only. You MUST speak only in English — every word you say must be in English. Never use another language in your speech or in the transcript. If the candidate speaks in another language, acknowledge in English (e.g. 'Thanks for that — in English please, so we can keep the transcript consistent') and continue the interview in English. The official transcript language for this session is English only.",
+    "LANGUAGE AND TRANSCRIPT (STRICT): The transcript must ALWAYS be in English only. You MUST speak only in English — every word you say must be in English. Never use another language in your speech or in the transcript. Do not switch to any other language. If the candidate speaks in another language, acknowledge in English (e.g. 'Thanks for that — in English please, so we can keep the transcript consistent') and continue the interview in English. The official transcript language for this session is English only.",
     "",
     "FILLERS: As the interviewer, use brief verbal fillers from your point of view while you process their answer or think of the next question (e.g. 'Give me a moment...', 'I see...', 'Right...', 'Okay...', 'Interesting...', 'Noted...', 'One second...'). Keep fillers short, then give your full response or next question.",
     doNotAsk,
@@ -157,15 +160,15 @@ function buildSystemInstruction(
     "1. You MUST strictly follow Section 1 for your behavior, tone, and approach.",
     "2. Use Section 2 (JD) and Section 3 (Resume) together to ask relevant, personalized questions.",
     "3. Ask questions one at a time. Wait for the candidate to finish before asking the next.",
-    "4. There is NO maximum number of questions. Do NOT stop at 15 questions. Continue asking relevant questions for the full 15-minute duration. Keep asking until you receive the wrap-up signal or time runs out.",
-    "5. Maximum interview duration is 15 minutes.",
+    "4. Ask relevant questions until either (a) you receive the wrap-up signal, (b) 15 questions have been asked, or (c) the 30-minute duration is reached. After 15 questions the system will send the wrap-up signal; deliver your closing statement and do not ask more questions.",
+    "5. Maximum interview duration is 30 minutes. The interview also ends after 15 questions (wrap-up will be triggered automatically).",
     "6. Ask a mix of technical, situational, and behavioral questions based on the JD and resume.",
     "7. Probe deeper with follow-up questions when the candidate gives shallow answers.",
     "8. Keep your responses short and conversational — this is a real-time voice interview.",
     "9. Start by briefly introducing yourself as Christie and the role, then begin with the first question.",
     "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words ('um', 'uh', 'let me think'), or when they are mid-sentence. The system gives you the turn only after about 1 second of continuous silence — you must wait for that. If they are silent for a long moment (e.g. 4+ seconds), then you may gently prompt. Never start speaking while they might still be in the middle of a sentence or thought.",
-    "11. Conduct the entire interview in English only. All speech and transcript must be in English only — no exceptions.",
-    "12. Do NOT limit yourself to 15 questions. Ask as many relevant questions as fit within the 15-minute session.",
+    "11. Conduct the entire interview in English only. All speech and transcript must be in English only. Do not switch to any other language — no exceptions.",
+    "12. You may ask up to 15 questions (or until time runs out). When the system sends the wrap-up signal (e.g. after 15 questions or near 30 minutes), give your closing statement and end.",
     "",
     "IMPORTANT: When you receive a message saying 'INTERVIEW_WRAP_UP_SIGNAL', you MUST:",
     "- Thank the candidate warmly for their time.",
@@ -278,10 +281,16 @@ export function useVoiceChat(
 
   // ---- Check limits after each AI turn ------------------------------------
   const checkLimits = useCallback(() => {
+    if (wrapUpSentRef.current) return;
     const elapsed = Date.now() - interviewStartRef.current;
 
-    // After 27 minutes (time only) → wrap up (question count not used for testing)
-    if (elapsed >= WRAP_UP_THRESHOLD_MS && !wrapUpSentRef.current) {
+    // After 15 questions → wrap up and move to report within 30 seconds
+    if (questionCountRef.current >= MAX_QUESTIONS) {
+      sendWrapUpSignal();
+      return;
+    }
+    // After 27 minutes (time only) → wrap up
+    if (elapsed >= WRAP_UP_THRESHOLD_MS) {
       sendWrapUpSignal();
     }
   }, [sendWrapUpSignal]);

@@ -5,8 +5,8 @@
  *   Left  — AI animated orb visualizer
  *   Right — Candidate live webcam recording
  *
- * Shows: question counter, timer (MM:SS / 15:00), wrap-up indicator.
- * Auto-ends at 15 minutes.
+ * Shows: question counter, timer (MM:SS / 30:00), wrap-up indicator.
+ * Auto-ends at 30 minutes.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -23,7 +23,7 @@ import { selectTemplate, selectGuardrails } from "../store/interviewSlice";
 import { setInterviewResult } from "../store/interviewSlice";
 import { saveTranscriptBackup, clearTranscriptBackup } from "../lib/transcriptBackup";
 
-const MAX_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+const MAX_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -182,7 +182,7 @@ function VoiceChatInner({
     };
   }, [state.webcamStream]);
 
-  // Auto-end at 15 minutes hard limit
+  // Auto-end at 30 minutes hard limit
   useEffect(() => {
     if (state.elapsedMs >= MAX_DURATION_MS && !autoEndTriggered.current) {
       autoEndTriggered.current = true;
@@ -325,7 +325,7 @@ function VoiceChatInner({
           <div className="vc-stat">
             <span className="vc-stat__label">Questions</span>
             <span className="vc-stat__value">
-              {state.questionCount}
+              {state.questionCount} / 15
             </span>
           </div>
 
@@ -333,7 +333,7 @@ function VoiceChatInner({
           <div className={`vc-stat ${timerClass}`}>
             <span className="vc-stat__label">Time</span>
             <span className="vc-stat__value">
-              {formatTime(state.elapsedMs)} / 15:00
+              {formatTime(state.elapsedMs)} / 30:00
             </span>
           </div>
 

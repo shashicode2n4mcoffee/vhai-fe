@@ -2193,6 +2193,65 @@ a.dash__brand {
 .pro-session__line--assistant { color: var(--text-secondary); }
 .pro-session__line--pending { opacity: 0.85; }
 
+.pro-session__reconnect {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  padding: 0.75rem 1.25rem;
+  border-radius: var(--radius-md);
+  font-size: 0.95rem;
+  font-weight: 500;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+}
+
+.pro-session__reconnect--reconnecting {
+  background: rgba(245, 158, 11, 0.95);
+  color: #1a1a1a;
+}
+
+.pro-session__reconnect--back-online {
+  background: rgba(16, 185, 129, 0.95);
+  color: #fff;
+}
+
+.pro-session__network-badge {
+  font-size: 0.75rem;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  font-weight: 500;
+}
+
+.pro-session__network-badge--stable {
+  background: rgba(16, 185, 129, 0.2);
+  color: var(--accent-green);
+}
+
+.pro-session__network-badge--moderate {
+  background: rgba(245, 158, 11, 0.2);
+  color: var(--accent-amber);
+}
+
+.pro-session__network-badge--poor {
+  background: rgba(239, 68, 68, 0.2);
+  color: var(--accent-red);
+}
+
+.pro-consent__data-saver {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.25rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+}
+
+.pro-consent__data-saver input {
+  flex-shrink: 0;
+}
+
 /* ---- Visualizer (standalone, fallback) ---- */
 
 .voice-chat__visualizer {
@@ -2941,6 +3000,39 @@ a.dash__brand {
 .pg-card__title svg {
   color: var(--accent-indigo);
   flex-shrink: 0;
+}
+
+.pg-card__desc {
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  line-height: 1.5;
+  margin: 0 0 1rem;
+}
+
+.pg-card__badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(139, 92, 246, 0.2);
+  color: #a78bfa;
+  margin-left: 6px;
+}
+
+.pg-toggle-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+}
+
+.pg-toggle-row input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+}
+
+.pg-toggle-label {
+  font-weight: 500;
 }
 
 /* ---- Form fields ---- */
@@ -5419,6 +5511,30 @@ a.dash__topbar-btn {
   background: rgba(239, 68, 68, 0.12);
   color: var(--accent-red);
   border: 1px solid rgba(239, 68, 68, 0.25);
+}
+
+.report-network-badge {
+  margin-left: auto;
+  padding: 4px 12px;
+  border-radius: var(--radius-full);
+  font-size: 0.78rem;
+  font-weight: 600;
+  flex-shrink: 0;
+}
+
+.report-network-badge--stable {
+  background: rgba(16, 185, 129, 0.15);
+  color: var(--accent-green);
+}
+
+.report-network-badge--moderate {
+  background: rgba(245, 158, 11, 0.12);
+  color: var(--accent-amber);
+}
+
+.report-network-badge--poor {
+  background: rgba(239, 68, 68, 0.12);
+  color: var(--accent-red);
 }
 
 /* ---- Criteria Grid (key-value pairs) ---- */

@@ -11,6 +11,8 @@ export interface CreditBalance {
   general: number;
   aptitude: number;
   coding: number;
+  /** True if user has at least one ACTIVE pack with plan BUSINESS */
+  hasBusinessPlan?: boolean;
 }
 
 export interface PlanInfo {

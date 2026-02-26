@@ -22,6 +22,7 @@ import {
   selectTranscript,
   selectVideoUrl,
   selectInterviewId,
+  selectNetworkQuality,
   resetInterview,
   setTemplate,
   setInterviewResult,
@@ -42,6 +43,7 @@ export function ConversationReport() {
   const transcript = useAppSelector(selectTranscript);
   const videoUrl = useAppSelector(selectVideoUrl);
   const interviewId = useAppSelector(selectInterviewId);
+  const networkQuality = useAppSelector(selectNetworkQuality);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
   const [hasCheckedBackup, setHasCheckedBackup] = useState(false);
@@ -99,6 +101,7 @@ export function ConversationReport() {
       transcript={transcript}
       videoUrl={videoUrl}
       interviewId={interviewId}
+      networkQuality={networkQuality}
       onReportGenerated={() => clearTranscriptBackup()}
       onBackToDashboard={() => {
         if (videoUrl) URL.revokeObjectURL(videoUrl);
@@ -115,6 +118,7 @@ function ReportInner({
   transcript,
   videoUrl,
   interviewId,
+  networkQuality,
   onReportGenerated,
   onBackToDashboard,
 }: {
@@ -122,6 +126,7 @@ function ReportInner({
   transcript: TranscriptEntry[];
   videoUrl: string | null;
   interviewId: string | null;
+  networkQuality: "stable" | "moderate" | "poor" | null;
   onReportGenerated: () => void;
   onBackToDashboard: () => void;
 }) {
@@ -752,6 +757,34 @@ function ReportInner({
             </div>
           )}
         </SectionCard>
+
+        {/* ================================================================
+            Network quality (Professional / LiveKit)
+            ================================================================ */}
+        {networkQuality && (
+          <section className="report-card report-card--network">
+            <div className="eval-section__header">
+              <span className="eval-section__num">N</span>
+              <h3 className="report-card__title">Network</h3>
+              <span
+                className={`report-network-badge report-network-badge--${networkQuality}`}
+              >
+                {networkQuality === "stable"
+                  ? "Stable connection"
+                  : networkQuality === "moderate"
+                    ? "Moderate"
+                    : "Poor connection"}
+              </span>
+            </div>
+            <p className="report-card__body">
+              {networkQuality === "stable"
+                ? "This interview was conducted under stable network conditions. No connection issues were detected."
+                : networkQuality === "moderate"
+                  ? "Connection quality was moderate during part of this session. Results are still valid."
+                  : "We detected a poor connection during this session. If your evaluation was affected, you may wish to retake the interview on a more stable network."}
+            </p>
+          </section>
+        )}
 
         {/* ================================================================
             Video Recording

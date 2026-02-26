@@ -2,7 +2,7 @@
  * SettingsPage — App preferences, data management, about.
  */
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useToast } from "./Toast";
 import { useAppDispatch } from "../store/hooks";
@@ -10,6 +10,7 @@ import { clearUser } from "../store/authSlice";
 import { clearTokens } from "../store/api";
 import { clearGeminiCache } from "../lib/gemini-key";
 import { useGetSettingsQuery, useUpdateSettingsMutation } from "../store/endpoints/settings";
+import { useGetCreditsBalanceQuery } from "../store/endpoints/credits";
 import { useDeleteOwnAccountMutation } from "../store/endpoints/users";
 import { BoltIcon } from "./AppLogo";
 import { logErrorToServer } from "../lib/logError";
@@ -17,20 +18,36 @@ import { logErrorToServer } from "../lib/logError";
 interface AppSettings {
   defaultQuestionCount: number;
   defaultDifficulty: "Easy" | "Medium" | "Hard";
+  cloudRecordingEnabled: boolean;
 }
 
 export function SettingsPage() {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const { data: serverSettings } = useGetSettingsQuery();
+  const { data: creditsBalance } = useGetCreditsBalanceQuery();
   const [updateSettingsApi] = useUpdateSettingsMutation();
   const [deleteAccountApi] = useDeleteOwnAccountMutation();
+
+  const hasBusinessPlan = creditsBalance?.hasBusinessPlan ?? false;
 
   const [settings, setSettings] = useState<AppSettings>({
     defaultQuestionCount: serverSettings?.defaultQuestionCount ?? 10,
     defaultDifficulty: (serverSettings?.defaultDifficulty as AppSettings["defaultDifficulty"]) ?? "Medium",
+    cloudRecordingEnabled: serverSettings?.cloudRecordingEnabled ?? false,
   });
   const [saved, setSaved] = useState(false);
+
+  // Sync from server when settings load
+  useEffect(() => {
+    if (!serverSettings) return;
+    setSettings((prev) => ({
+      ...prev,
+      defaultQuestionCount: serverSettings.defaultQuestionCount ?? 10,
+      defaultDifficulty: (serverSettings.defaultDifficulty as AppSettings["defaultDifficulty"]) ?? "Medium",
+      cloudRecordingEnabled: serverSettings.cloudRecordingEnabled ?? false,
+    }));
+  }, [serverSettings]);
 
   // Data management confirmations
   const [confirmClearInt, setConfirmClearInt] = useState(false);
@@ -146,6 +163,35 @@ export function SettingsPage() {
             <div className="pg-msg pg-msg--ok">Settings saved</div>
           )}
         </section>
+
+        {/* ---- Cloud recording (Business plan only) ---- */}
+        {hasBusinessPlan && (
+          <section className="pg-card">
+            <h2 className="pg-card__title">
+              <IconCloud /> Cloud Recording <span className="pg-card__badge">Business</span>
+            </h2>
+            <p className="pg-card__desc">
+              Store a copy of Professional video interviews in the cloud for compliance and audit. Uses LiveKit Egress to your storage (S3/GCS). Off by default; enable only if you need an audit trail.
+            </p>
+            <div className="pg-field">
+              <label className="pg-toggle-row">
+                <span className="pg-toggle-label">Enable cloud recording</span>
+                <input
+                  type="checkbox"
+                  checked={settings.cloudRecordingEnabled}
+                  onChange={(e) => {
+                    const v = e.target.checked;
+                    setSettings((prev) => ({ ...prev, cloudRecordingEnabled: v }));
+                    handleSave({ cloudRecordingEnabled: v });
+                  }}
+                />
+              </label>
+            </div>
+            {saved && (
+              <div className="pg-msg pg-msg--ok">Settings saved</div>
+            )}
+          </section>
+        )}
 
         {/* ---- Data Management ---- */}
         <section className="pg-card pg-card--danger-zone">
@@ -284,6 +330,14 @@ function IconInfo() {
       <circle cx="12" cy="12" r="10" />
       <line x1="12" y1="16" x2="12" y2="12" />
       <line x1="12" y1="8" x2="12.01" y2="8" />
+    </svg>
+  );
+}
+
+function IconCloud() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M17.5 19H9a7 7 0 1 1 6.71-9h1.79a4.5 4.5 0 1 1 0 9Z" />
     </svg>
   );
 }

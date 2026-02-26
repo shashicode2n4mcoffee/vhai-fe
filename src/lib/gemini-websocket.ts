@@ -478,6 +478,7 @@ export class GeminiWebSocketClient {
           silenceDurationMs: this.config.silenceDurationMs,
         },
       },
+      // Transcription: session is English-only (enforced via system instruction)
       inputAudioTranscription: {},
       outputAudioTranscription: {},
       // Request resumption tokens so we can reconnect after ~10 min and keep session 30+ min

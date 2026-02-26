@@ -354,7 +354,7 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
                   <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
                 <div>
-                  <strong>Interview Rules:</strong> Maximum 15 questions or 15 minutes (whichever comes first).
+                  <strong>Interview Rules:</strong> Maximum 30 minutes with automatic wrap-up.
                   Your video is recorded locally for your review only — we do not save it on our servers.
                 </div>
               </div>

@@ -11,6 +11,8 @@ export interface UserSettings {
   defaultDifficulty: string;
   theme: string;
   notifications: boolean;
+  /** Business plan only: store interview recording in cloud (LiveKit Egress) */
+  cloudRecordingEnabled?: boolean;
 }
 
 const settingsApi = api.injectEndpoints({

@@ -18,6 +18,7 @@ export function ProfessionalConsentPage() {
   const { data: config } = useGetLiveKitConfigQuery();
   const [getToken, { isLoading }] = useGetLiveKitTokenMutation();
   const [error, setError] = useState<string | null>(null);
+  const [dataSaver, setDataSaver] = useState(false);
 
   // Must have completed template step (template in Redux)
   if (!template) {
@@ -43,7 +44,7 @@ export function ProfessionalConsentPage() {
     try {
       const { token, url, roomName } = await getToken({}).unwrap();
       navigate("/interview/professional/session", {
-        state: { token, url, roomName },
+        state: { token, url, roomName, dataSaver },
       });
     } catch (e) {
       const msg =
@@ -75,6 +76,14 @@ export function ProfessionalConsentPage() {
             <strong>Your consent:</strong> By clicking &quot;I agree and start interview&quot;, you confirm that you have read this notice and consent to recording and the above data practices.
           </li>
         </ul>
+        <label className="pro-consent__data-saver">
+          <input
+            type="checkbox"
+            checked={dataSaver}
+            onChange={(e) => setDataSaver(e.target.checked)}
+          />
+          <span>Use <strong>data saver</strong> (lower video quality for slow or mobile networks)</span>
+        </label>
         {error && <p className="pro-landing__error">{error}</p>}
         <div className="pro-landing__actions">
           <button
