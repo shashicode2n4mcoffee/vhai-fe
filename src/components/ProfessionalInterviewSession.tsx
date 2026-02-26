@@ -24,8 +24,10 @@ import { setInterviewResult } from "../store/interviewSlice";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { selectTemplate, selectGuardrails } from "../store/interviewSlice";
 import { saveTranscriptBackup } from "../lib/transcriptBackup";
+import { useGetSettingsQuery } from "../store/endpoints/settings";
+import { useReportLiveKitQualityMutation } from "../store/endpoints/livekit";
 
-const MAX_DURATION_MS = 30 * 60 * 1000;
+const MAX_DURATION_MS = 27 * 60 * 1000; // 27 min max; wrap-up at 26
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -69,12 +71,34 @@ function ProfessionalSessionInner() {
   const lkConnectionState = useConnectionState();
   const template = useAppSelector(selectTemplate);
   const guardrails = useAppSelector(selectGuardrails);
+  const { data: settings } = useGetSettingsQuery();
+  const [reportQuality] = useReportLiveKitQualityMutation();
   const cameraTracks = useTracks([Track.Source.Camera]);
   const startedRef = useRef(false);
   const [connectionQualityLabel, setConnectionQualityLabel] = useState<NetworkQuality>("stable");
   const worstQualityRef = useRef<NetworkQuality>("stable");
   const [reconnectMessage, setReconnectMessage] = useState<"reconnecting" | "back-online" | null>(null);
   const reconnectMessageTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const lastQualityReportRef = useRef(0);
+  const QUALITY_REPORT_THROTTLE_MS = 10_000;
+  const [screenShareOn, setScreenShareOn] = useState(false);
+  const screenShareInProgressRef = useRef(false);
+  const autoEndTriggered = useRef(false);
+  const handleEndRef = useRef<() => Promise<void>>(() => Promise.resolve());
+
+  const [state, actions] = useVoiceChat(
+    template ?? undefined,
+    undefined,
+    {
+      onWrapUpComplete: () => {
+        if (!autoEndTriggered.current) {
+          autoEndTriggered.current = true;
+          setTimeout(() => void handleEndRef.current(), 1200);
+        }
+      },
+    },
+    guardrails ?? null,
+  );
 
   // Track worst LiveKit connection quality for report
   useEffect(() => {
@@ -90,6 +114,30 @@ function ProfessionalSessionInner() {
       local.off(ParticipantEvent.ConnectionQualityChanged, update);
     };
   }, [room]);
+
+  // P2 Analytics: send quality samples when livekitAnalyticsEnabled
+  useEffect(() => {
+    if (!settings?.livekitAnalyticsEnabled) return;
+    const now = Date.now();
+    if (now - lastQualityReportRef.current < QUALITY_REPORT_THROTTLE_MS) return;
+    lastQualityReportRef.current = now;
+    reportQuality({ quality: connectionQualityLabel, roomName: room.name }).catch(() => {});
+  }, [connectionQualityLabel, room.name, settings?.livekitAnalyticsEnabled, reportQuality]);
+
+  // P2 Data channel: send transcript snapshot when livekitDataChannelEnabled (throttled)
+  const dataChannelThrottleRef = useRef(0);
+  useEffect(() => {
+    if (!settings?.livekitDataChannelEnabled || !state.transcript?.length) return;
+    const now = Date.now();
+    if (now - dataChannelThrottleRef.current < 5000) return;
+    dataChannelThrottleRef.current = now;
+    const payload = JSON.stringify({
+      type: "transcript",
+      count: state.transcript.length,
+      last: state.transcript.slice(-3),
+    });
+    room.localParticipant.publishData(new TextEncoder().encode(payload), { reliable: true }).catch(() => {});
+  }, [settings?.livekitDataChannelEnabled, state.transcript, room.localParticipant]);
 
   // Reconnection UI: show "Reconnecting…" / "Back online"
   const prevLkStateRef = useRef(lkConnectionState);
@@ -122,23 +170,6 @@ function ProfessionalSessionInner() {
       }
     };
   }, [lkConnectionState]);
-
-  const [state, actions] = useVoiceChat(
-    template ?? undefined,
-    undefined,
-    {
-      onWrapUpComplete: () => {
-        if (!autoEndTriggered.current) {
-          autoEndTriggered.current = true;
-          setTimeout(() => void handleEndRef.current(), 1200);
-        }
-      },
-    },
-    guardrails ?? null,
-  );
-
-  const autoEndTriggered = useRef(false);
-  const handleEndRef = useRef<() => Promise<void>>(() => Promise.resolve());
 
   // Auto-start Gemini voice when mounted (consent already given on previous page)
   useEffect(() => {
@@ -202,6 +233,24 @@ function ProfessionalSessionInner() {
   const isReconnecting =
     lkConnectionState === ConnectionState.Reconnecting || lkConnectionState === ConnectionState.SignalReconnecting;
 
+  const toggleScreenShare = useCallback(async () => {
+    if (screenShareInProgressRef.current) return;
+    screenShareInProgressRef.current = true;
+    try {
+      if (screenShareOn) {
+        await room.localParticipant.setScreenShareEnabled(false);
+        setScreenShareOn(false);
+      } else {
+        await room.localParticipant.setScreenShareEnabled(true);
+        setScreenShareOn(true);
+      }
+    } catch (e) {
+      console.error("[LiveKit] Screen share:", e);
+    } finally {
+      screenShareInProgressRef.current = false;
+    }
+  }, [room.localParticipant, screenShareOn]);
+
   return (
     <div className="pro-session">
       <RoomAudioRenderer />
@@ -236,6 +285,17 @@ function ProfessionalSessionInner() {
                   : "Poor connection"}
             </span>
             <span className="pro-session__timer">{formatTime(state.elapsedMs)}</span>
+            {settings?.livekitScreenShareEnabled && (
+              <button
+                type="button"
+                className={`btn btn--sm ${screenShareOn ? "btn--primary" : "btn--secondary"}`}
+                onClick={() => void toggleScreenShare()}
+                disabled={isReconnecting}
+                title={screenShareOn ? "Stop sharing screen" : "Share screen"}
+              >
+                {screenShareOn ? "Stop screen share" : "Share screen"}
+              </button>
+            )}
             <button
               type="button"
               className="btn btn--secondary btn--sm"
@@ -278,6 +338,7 @@ export function ProfessionalInterviewSession() {
   const location = useLocation();
   const navigate = useNavigate();
   const sessionState = location.state as SessionState | null;
+  const { data: settings } = useGetSettingsQuery();
 
   useEffect(() => {
     if (!sessionState?.token || !sessionState?.url) {
@@ -293,9 +354,12 @@ export function ProfessionalInterviewSession() {
     );
   }
 
+  const simulcast = settings?.livekitSimulcastEnabled !== false;
   const videoOptions = sessionState.dataSaver
-    ? { resolution: VideoPresets.h360.resolution }
-    : true;
+    ? { resolution: VideoPresets.h360.resolution, simulcast }
+    : simulcast
+      ? true
+      : { simulcast: false };
 
   return (
     <LiveKitRoom

@@ -12,6 +12,7 @@ export interface LiveKitTokenResponse {
   token: string;
   url: string;
   roomName: string;
+  interviewId?: string;
 }
 
 const livekitApi = api.injectEndpoints({
@@ -21,9 +22,15 @@ const livekitApi = api.injectEndpoints({
     }),
     getLiveKitToken: builder.mutation<
       LiveKitTokenResponse,
-      { roomName?: string; participantName?: string }
+      { roomName?: string; participantName?: string; interviewId?: string; templateId?: string; role?: string }
     >({
       query: (body) => ({ url: "/livekit/token", method: "POST", body: body || {} }),
+    }),
+    reportLiveKitQuality: builder.mutation<
+      { ok: boolean },
+      { quality: string; roomName?: string }
+    >({
+      query: (body) => ({ url: "/livekit/quality", method: "POST", body }),
     }),
   }),
 });
@@ -31,4 +38,5 @@ const livekitApi = api.injectEndpoints({
 export const {
   useGetLiveKitConfigQuery,
   useGetLiveKitTokenMutation,
+  useReportLiveKitQualityMutation,
 } = livekitApi;

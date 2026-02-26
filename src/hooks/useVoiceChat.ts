@@ -9,8 +9,7 @@
  *
  * Interview constraints:
  *   - No question limit (for testing; was 15 in production)
- *   - Maximum 30 minutes
- *   - 3 minutes before timeout → AI wraps up
+ *   - Maximum 27 minutes; by 26 minutes wrap-up is triggered so closing statement fits in the last minute
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -34,10 +33,10 @@ import { clearTranscriptBackup, saveTranscriptBackup } from "../lib/transcriptBa
 // Constants
 // ---------------------------------------------------------------------------
 
-const MAX_DURATION_MS = 30 * 60 * 1000;          // 30 minutes
+const MAX_DURATION_MS = 27 * 60 * 1000;          // 27 minutes hard cap
 const MAX_QUESTIONS = 15;                        // After 15 questions, trigger wrap-up and move to report
-const WRAP_UP_BEFORE_MS = 3 * 60 * 1000;         // 3 minutes before timeout
-const WRAP_UP_THRESHOLD_MS = MAX_DURATION_MS - WRAP_UP_BEFORE_MS; // 27 minutes
+const WRAP_UP_BEFORE_MS = 1 * 60 * 1000;         // 1 minute before end for closing statement
+const WRAP_UP_THRESHOLD_MS = MAX_DURATION_MS - WRAP_UP_BEFORE_MS; // 26 minutes — trigger wrap-up so AI delivers closing by 27
 /** If no audio and no turnComplete for this long while AI is "responding", commit pending and set listening (Section 9.2) */
 const TURN_COMPLETE_TIMEOUT_MS = 15_000;
 /** After sending wrap-up signal, allow up to this long for AI to say closing statement, then auto-end and move to report */
@@ -160,15 +159,15 @@ function buildSystemInstruction(
     "1. You MUST strictly follow Section 1 for your behavior, tone, and approach.",
     "2. Use Section 2 (JD) and Section 3 (Resume) together to ask relevant, personalized questions.",
     "3. Ask questions one at a time. Wait for the candidate to finish before asking the next.",
-    "4. Ask relevant questions until either (a) you receive the wrap-up signal, (b) 15 questions have been asked, or (c) the 30-minute duration is reached. After 15 questions the system will send the wrap-up signal; deliver your closing statement and do not ask more questions.",
-    "5. Maximum interview duration is 30 minutes. The interview also ends after 15 questions (wrap-up will be triggered automatically).",
+    "4. Ask relevant questions until either (a) you receive the wrap-up signal, (b) 15 questions have been asked, or (c) the 27-minute duration is reached. After 15 questions the system will send the wrap-up signal; deliver your closing statement and do not ask more questions.",
+    "5. Maximum interview duration is 27 minutes. By 26 minutes the system will send the wrap-up signal; deliver your closing statement so the interview ends by 27 minutes. The interview also ends after 15 questions (wrap-up will be triggered automatically).",
     "6. Ask a mix of technical, situational, and behavioral questions based on the JD and resume.",
     "7. Probe deeper with follow-up questions when the candidate gives shallow answers.",
     "8. Keep your responses short and conversational — this is a real-time voice interview.",
     "9. Start by briefly introducing yourself as Christie and the role, then begin with the first question.",
     "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words ('um', 'uh', 'let me think'), or when they are mid-sentence. The system gives you the turn only after about 1 second of continuous silence — you must wait for that. If they are silent for a long moment (e.g. 4+ seconds), then you may gently prompt. Never start speaking while they might still be in the middle of a sentence or thought.",
     "11. Conduct the entire interview in English only. All speech and transcript must be in English only. Do not switch to any other language — no exceptions.",
-    "12. You may ask up to 15 questions (or until time runs out). When the system sends the wrap-up signal (e.g. after 15 questions or near 30 minutes), give your closing statement and end.",
+    "12. You may ask up to 15 questions (or until time runs out). When the system sends the wrap-up signal (e.g. after 15 questions or at 26 minutes), give your closing statement and end by 27 minutes.",
     "",
     "IMPORTANT: When you receive a message saying 'INTERVIEW_WRAP_UP_SIGNAL', you MUST:",
     "- Thank the candidate warmly for their time.",
@@ -289,7 +288,7 @@ export function useVoiceChat(
       sendWrapUpSignal();
       return;
     }
-    // After 27 minutes (time only) → wrap up
+    // At 26 minutes (time only) → wrap up so closing statement fits before 27 min
     if (elapsed >= WRAP_UP_THRESHOLD_MS) {
       sendWrapUpSignal();
     }
@@ -339,7 +338,7 @@ export function useVoiceChat(
       const elapsed = Date.now() - interviewStartRef.current;
       setElapsedMs(elapsed);
 
-      // Auto wrap-up at 27 minutes
+      // Auto wrap-up at 26 minutes so closing statement by 27
       if (elapsed >= WRAP_UP_THRESHOLD_MS && !wrapUpSentRef.current) {
         sendWrapUpSignal();
       }

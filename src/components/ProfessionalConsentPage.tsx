@@ -6,22 +6,25 @@
 
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { useGetLiveKitConfigQuery } from "../store/endpoints/livekit";
-import { useGetLiveKitTokenMutation } from "../store/endpoints/livekit";
+import { useGetLiveKitConfigQuery, useGetLiveKitTokenMutation } from "../store/endpoints/livekit";
 import { Navigate } from "react-router-dom";
 import { useAppSelector } from "../store/hooks";
-import { selectTemplate } from "../store/interviewSlice";
+import { selectTemplate, selectInterviewId } from "../store/interviewSlice";
 
 export function ProfessionalConsentPage() {
   const navigate = useNavigate();
   const template = useAppSelector(selectTemplate);
+  const interviewId = useAppSelector(selectInterviewId);
   const { data: config } = useGetLiveKitConfigQuery();
   const [getToken, { isLoading }] = useGetLiveKitTokenMutation();
   const [error, setError] = useState<string | null>(null);
   const [dataSaver, setDataSaver] = useState(false);
 
-  // Must have completed template step (template in Redux)
+  // Must have completed template step (template + interview in Redux)
   if (!template) {
+    return <Navigate to="/interview/professional/new" replace />;
+  }
+  if (!interviewId) {
     return <Navigate to="/interview/professional/new" replace />;
   }
 
@@ -42,7 +45,11 @@ export function ProfessionalConsentPage() {
   const handleStart = async () => {
     setError(null);
     try {
-      const { token, url, roomName } = await getToken({}).unwrap();
+      const { token, url, roomName } = await getToken({
+        interviewId,
+        templateId: template.id,
+        participantName: "Candidate",
+      }).unwrap();
       navigate("/interview/professional/session", {
         state: { token, url, roomName, dataSaver },
       });

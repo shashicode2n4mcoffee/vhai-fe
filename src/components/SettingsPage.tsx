@@ -20,6 +20,14 @@ interface AppSettings {
   defaultQuestionCount: number;
   defaultDifficulty: "Easy" | "Medium" | "Hard";
   cloudRecordingEnabled: boolean;
+  livekitRoomMetadataEnabled: boolean;
+  livekitDataChannelEnabled: boolean;
+  livekitAnalyticsEnabled: boolean;
+  livekitSimulcastEnabled: boolean;
+  livekitE2EEEnabled: boolean;
+  livekitObserverTokenAllowed: boolean;
+  livekitScreenShareEnabled: boolean;
+  livekitAgentEnabled: boolean;
 }
 
 interface PublicConfig {
@@ -49,6 +57,14 @@ export function SettingsPage() {
     defaultQuestionCount: serverSettings?.defaultQuestionCount ?? 10,
     defaultDifficulty: (serverSettings?.defaultDifficulty as AppSettings["defaultDifficulty"]) ?? "Medium",
     cloudRecordingEnabled: serverSettings?.cloudRecordingEnabled ?? false,
+    livekitRoomMetadataEnabled: serverSettings?.livekitRoomMetadataEnabled ?? true,
+    livekitDataChannelEnabled: serverSettings?.livekitDataChannelEnabled ?? false,
+    livekitAnalyticsEnabled: serverSettings?.livekitAnalyticsEnabled ?? false,
+    livekitSimulcastEnabled: serverSettings?.livekitSimulcastEnabled ?? true,
+    livekitE2EEEnabled: serverSettings?.livekitE2EEEnabled ?? false,
+    livekitObserverTokenAllowed: serverSettings?.livekitObserverTokenAllowed ?? false,
+    livekitScreenShareEnabled: serverSettings?.livekitScreenShareEnabled ?? false,
+    livekitAgentEnabled: serverSettings?.livekitAgentEnabled ?? false,
   });
   const [saved, setSaved] = useState(false);
 
@@ -60,6 +76,14 @@ export function SettingsPage() {
       defaultQuestionCount: serverSettings.defaultQuestionCount ?? 10,
       defaultDifficulty: (serverSettings.defaultDifficulty as AppSettings["defaultDifficulty"]) ?? "Medium",
       cloudRecordingEnabled: serverSettings.cloudRecordingEnabled ?? false,
+      livekitRoomMetadataEnabled: serverSettings.livekitRoomMetadataEnabled ?? true,
+      livekitDataChannelEnabled: serverSettings.livekitDataChannelEnabled ?? false,
+      livekitAnalyticsEnabled: serverSettings.livekitAnalyticsEnabled ?? false,
+      livekitSimulcastEnabled: serverSettings.livekitSimulcastEnabled ?? true,
+      livekitE2EEEnabled: serverSettings.livekitE2EEEnabled ?? false,
+      livekitObserverTokenAllowed: serverSettings.livekitObserverTokenAllowed ?? false,
+      livekitScreenShareEnabled: serverSettings.livekitScreenShareEnabled ?? false,
+      livekitAgentEnabled: serverSettings.livekitAgentEnabled ?? false,
     }));
   }, [serverSettings]);
 
@@ -178,7 +202,7 @@ export function SettingsPage() {
           )}
         </section>
 
-        {/* ---- Cloud recording (Business plan only) ---- */}
+        {/* ---- Cloud recording (Business plan only) - P0 ---- */}
         {hasBusinessPlan && (
           <section className="pg-card">
             <h2 className="pg-card__title">
@@ -206,6 +230,137 @@ export function SettingsPage() {
             )}
           </section>
         )}
+
+        {/* ---- LiveKit options (P1–P3) - Professional video interview ---- */}
+        <section className="pg-card">
+          <h2 className="pg-card__title">LiveKit options</h2>
+          <p className="pg-card__desc">
+            Toggle features for Professional video interviews (LiveKit room). Room metadata and simulcast are on by default; others are optional.
+          </p>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Room metadata (P1)</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitRoomMetadataEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitRoomMetadataEnabled: v }));
+                  handleSave({ livekitRoomMetadataEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Set interviewId/templateId on the room for webhooks and Egress.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Data channel (P2)</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitDataChannelEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitDataChannelEnabled: v }));
+                  handleSave({ livekitDataChannelEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Send transcript/signals over LiveKit data channel.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Analytics (P2)</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitAnalyticsEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitAnalyticsEnabled: v }));
+                  handleSave({ livekitAnalyticsEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Send connection quality samples to the backend.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Simulcast (P3)</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitSimulcastEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitSimulcastEnabled: v }));
+                  handleSave({ livekitSimulcastEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Adaptive video quality for poor networks.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">E2EE (P3)</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitE2EEEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitE2EEEnabled: v }));
+                  handleSave({ livekitE2EEEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">End-to-end encryption for the video room.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Observer tokens</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitObserverTokenAllowed}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitObserverTokenAllowed: v }));
+                  handleSave({ livekitObserverTokenAllowed: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Allow HR to join as view-only observer in interview rooms.</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Screen share</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitScreenShareEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitScreenShareEnabled: v }));
+                  handleSave({ livekitScreenShareEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Let candidate share screen in Professional interview (technical interviews).</span>
+          </div>
+          <div className="pg-field">
+            <label className="pg-toggle-row">
+              <span className="pg-toggle-label">Agents</span>
+              <input
+                type="checkbox"
+                checked={settings.livekitAgentEnabled}
+                onChange={(e) => {
+                  const v = e.target.checked;
+                  setSettings((prev) => ({ ...prev, livekitAgentEnabled: v }));
+                  handleSave({ livekitAgentEnabled: v });
+                }}
+              />
+            </label>
+            <span className="pg-field-hint">Dispatch a LiveKit Agent to the room (voice/video AI in cloud). Requires LIVEKIT_AGENT_NAME.</span>
+          </div>
+          {saved && (
+            <div className="pg-msg pg-msg--ok">Settings saved</div>
+          )}
+        </section>
 
         {/* ---- Data Management ---- */}
         <section className="pg-card pg-card--danger-zone">

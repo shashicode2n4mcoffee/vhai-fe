@@ -4,6 +4,12 @@
  * Manages a single bidirectional WebSocket session with the Gemini Live API.
  * Handles the setup handshake, real-time audio streaming, and server message
  * parsing with typed callbacks.
+ *
+ * Session lifetime (per https://ai.google.dev/gemini-api/docs/live-session):
+ * - Connection limit ~10 min; session can span multiple connections via session resumption.
+ * - We request sessionResumption + contextWindowCompression to support 30 min interviews.
+ * - On GoAway (server warning before close) we reconnect immediately with the resumption handle.
+ * - Proactive reconnect at 9 min avoids server-initiated close; resumption keeps context.
  */
 
 import type {
@@ -44,7 +50,9 @@ const WS_ENDPOINT =
 
 /** Delay before reconnecting after connection close (e.g. 10 min limit) */
 const RECONNECT_DELAY_MS = 800;
-/** Proactively rotate connection before server closes at ~10 min (use 9 min to be safe) */
+/** When server sent GoAway, reconnect immediately (no extra delay) */
+const GO_AWAY_RECONNECT_DELAY_MS = 0;
+/** Proactively rotate connection before server closes at ~10 min (API limit; use 9 min to be safe) */
 const PROACTIVE_RECONNECT_MS = 9 * 60 * 1000;
 /** Max time to wait for WebSocket to open before failing (connection timeout) */
 const CONNECT_TIMEOUT_MS = 20_000;
@@ -67,6 +75,8 @@ export class GeminiWebSocketClient {
   private didSendSetupWithResumptionToken = false;
   /** Number of resumption reconnect attempts left (avoid infinite loop on invalid token) */
   private resumptionRetriesLeft = 1;
+  /** True when close was triggered by server GoAway → use minimal reconnect delay */
+  private reconnectingDueToGoAway = false;
   /** Timer for connection timeout (close if WebSocket doesn't open in time) */
   private connectTimeoutId: ReturnType<typeof setTimeout> | null = null;
   /** Retries left for initial connect (no resumption) on timeout/error */
@@ -152,6 +162,7 @@ export class GeminiWebSocketClient {
   disconnect(): void {
     this.intentionalDisconnect = true;
     this.resumptionToken = null;
+    this.reconnectingDueToGoAway = false;
     this.didSendSetupWithResumptionToken = false;
     this.resumptionRetriesLeft = 1;
     this.initialConnectRetriesLeft = INITIAL_CONNECT_RETRIES;
@@ -277,6 +288,17 @@ export class GeminiWebSocketClient {
 
       const typed = msg as unknown as GeminiServerMessage;
 
+      // 0. GoAway: server will close connection soon (~10 min limit); reconnect immediately with resumption
+      const goAway = typed.goAway ?? (msg["go_away"] as { timeLeft?: number | string } | undefined);
+      if (goAway) {
+        const timeLeft = goAway.timeLeft != null ? String(goAway.timeLeft) : "unknown";
+        console.log("[GeminiWS] GoAway received (timeLeft:", timeLeft, ") — reconnecting with session resumption");
+        if (this.resumptionToken && this.ws && !this.intentionalDisconnect) {
+          this.reconnectingDueToGoAway = true;
+          this.ws.close(1000, "GoAway received");
+        }
+      }
+
       // 1. Session resumption token (store for reconnect after ~10 min)
       // API sends newHandle when resumable=true; only then should we store and schedule proactive reconnect
       const resumptionUpdate =
@@ -347,6 +369,8 @@ export class GeminiWebSocketClient {
         !msg["error"] &&
         !typed.sessionResumptionUpdate &&
         !(msg["session_resumption_update"]) &&
+        !goAway &&
+        !msg["go_away"] &&
         typed.setupComplete === undefined &&
         msg["setup_complete"] === undefined
       ) {
@@ -371,26 +395,44 @@ export class GeminiWebSocketClient {
   private handleClose = (ev: CloseEvent): void => {
     this.clearConnectTimeout();
     const reason = ev.reason || "No reason provided";
-    console.warn(
-      `[GeminiWS] WebSocket closed — code: ${ev.code}, reason: ${reason}, clean: ${ev.wasClean}`,
-    );
+    const isExpectedRotation =
+      !this.intentionalDisconnect &&
+      this.resumptionToken &&
+      (ev.code === 1000 || ev.code === 1005 || this.reconnectingDueToGoAway);
+
+    if (isExpectedRotation) {
+      console.log(
+        "[GeminiWS] Connection closed (expected ~10 min rotation) — code:",
+        ev.code,
+        "— reconnecting with session resumption",
+      );
+    } else {
+      console.warn(
+        `[GeminiWS] WebSocket closed — code: ${ev.code}, reason: ${reason}, clean: ${ev.wasClean}`,
+      );
+    }
 
     this.ws = null;
-    this.setState("disconnected");
 
-    // Auto-reconnect with session resumption to support 30+ min (server closes ~every 10 min)
+    // Auto-reconnect with session resumption to support 30 min interviews (API limit ~10 min per connection)
     if (!this.intentionalDisconnect && this.resumptionToken) {
       if (this.proactiveReconnectTimerId !== null) {
         clearTimeout(this.proactiveReconnectTimerId);
         this.proactiveReconnectTimerId = null;
       }
+      const delayMs = this.reconnectingDueToGoAway ? GO_AWAY_RECONNECT_DELAY_MS : RECONNECT_DELAY_MS;
+      this.reconnectingDueToGoAway = false;
+      // Keep UX as "connecting" so UI shows reconnecting, not disconnected/error
+      this.setState("connecting");
       this.reconnectTimeoutId = setTimeout(() => {
         this.reconnectTimeoutId = null;
         console.log("[GeminiWS] Reconnecting with session resumption...");
         this.connect();
-      }, RECONNECT_DELAY_MS);
+      }, delayMs);
       return;
     }
+
+    this.setState("disconnected");
 
     // One retry for initial connect on connection failure (no resumption)
     if (
@@ -410,6 +452,7 @@ export class GeminiWebSocketClient {
     // Reset retry count on normal close so next resumption can retry if needed
     if (this.intentionalDisconnect) this.resumptionRetriesLeft = 1;
 
+    // Never surface error for expected 10-min rotation (clean close or resumption path already handled)
     if (ev.code !== 1000 && ev.code !== 1005) {
       this.callbacks.onError(
         new Error(`Connection closed (code ${ev.code}): ${reason}`),

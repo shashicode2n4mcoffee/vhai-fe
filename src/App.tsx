@@ -45,6 +45,7 @@ import { CodingQuestionsPage } from "./components/CodingQuestionsPage";
 import { CodingQuestionDetailPage } from "./components/CodingQuestionDetailPage";
 import { ProfessionalInterviewSession } from "./components/ProfessionalInterviewSession";
 import { ProfessionalConsentPage } from "./components/ProfessionalConsentPage";
+import { LiveKitObserverRoom } from "./components/LiveKitObserverRoom";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
@@ -73,6 +74,7 @@ export default function App() {
             <Route path="/interview/professional/new" element={<TemplateForm variant="professional" />} />
             <Route path="/interview/professional/consent" element={<ProfessionalConsentPage />} />
             <Route path="/interview/professional/session" element={<ProfessionalInterviewSession />} />
+            <Route path="/interview/observer" element={<LiveKitObserverRoom />} />
             <Route path="/aptitude" element={<AptitudeTest />} />
             <Route path="/aptitude/report/:id" element={<AptitudeReportView />} />
             <Route path="/coding" element={<CodingTest />} />

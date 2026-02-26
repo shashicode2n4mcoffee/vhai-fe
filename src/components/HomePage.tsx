@@ -118,7 +118,7 @@ export function HomePage() {
             <h3 className="lp-feature__title">JD + Resume Customized Interviews</h3>
             <p className="lp-feature__desc">
               Every interview is tailored to the job description and candidate's resume. The AI asks personalized questions, probes deeper on weak areas, and evaluates like a real panel.
-              Up to 30 minutes with automatic wrap-up.
+              Up to 27 minutes with automatic wrap-up.
             </p>
             <ul className="lp-feature__tags">
               <li>JD-Tailored</li><li>Resume-Based</li><li>Live Voice &amp; Video</li>
@@ -211,7 +211,7 @@ export function HomePage() {
             <div className="lp-step__content">
               <h3 className="lp-step__title">Live Video Interview</h3>
               <p className="lp-step__desc">
-                The AI starts by introducing the role and asks tailored questions over up to 30 minutes. Your video is recorded locally. Proctoring runs in the background.
+                The AI starts by introducing the role and asks tailored questions over up to 27 minutes. Your video is recorded locally. Proctoring runs in the background.
               </p>
             </div>
           </div>
@@ -343,7 +343,7 @@ const TESTIMONIALS = [
 
 const FAQS = [
   { q: "What is VocalHireAI?", a: "VocalHireAI is an AI-powered video interview platform. Candidates have real-time voice conversations with an AI interviewer while being video-recorded. The AI asks personalized questions based on the job description and candidate's resume, then generates a comprehensive 20-section evaluation report." },
-{ q: "How realistic are the AI interviews?", a: "Very. We use Gemini AI for real-time bidirectional voice conversations. The AI listens, understands context, asks follow-ups, and responds naturally. It asks questions over up to 30 minutes with automatic wrap-up — just like a real interview panel." },
+{ q: "How realistic are the AI interviews?", a: "Very. We use Gemini AI for real-time bidirectional voice conversations. The AI listens, understands context, asks follow-ups, and responds naturally. It asks questions over up to 27 minutes with automatic wrap-up — just like a real interview panel." },
   { q: "What job roles are supported?", a: "We have 41 pre-built templates covering Software Engineering (20 roles), MBA & Management (10 roles), VLSI & Semiconductor (5 roles), General positions (4 templates), and a fully customizable template. You can also create your own from scratch." },
   { q: "Is candidate video data private?", a: "Absolutely. Video recordings happen locally in your browser and are never uploaded to our servers. AI proctoring (face detection, gaze tracking) runs entirely in-browser using MediaPipe. We explicitly tell candidates at the end of each interview that we do not save their video." },
   { q: "Who is this for?", a: "VocalHireAI serves four roles: Candidates practicing for interviews, Hiring Managers screening applicants, College administrators running placement prep, and Admins managing the platform. Each role has a tailored dashboard and permissions." },

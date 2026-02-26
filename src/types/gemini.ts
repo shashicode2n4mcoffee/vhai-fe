@@ -86,10 +86,18 @@ export interface SessionResumptionUpdate {
   token?: string;
 }
 
+/** Server sends before closing connection (~10 min limit); use timeLeft and reconnect with resumption */
+export interface GoAwayMessage {
+  /** Remaining time (e.g. seconds) before connection is terminated */
+  timeLeft?: number | string;
+}
+
 export interface GeminiServerMessage {
   setupComplete?: Record<string, never>;
   /** Server sends this to support reconnection; store token for next setup */
   sessionResumptionUpdate?: SessionResumptionUpdate;
+  /** Server signals connection will soon close; reconnect with resumption handle before it aborts */
+  goAway?: GoAwayMessage;
   serverContent?: {
     modelTurn?: {
       parts?: {

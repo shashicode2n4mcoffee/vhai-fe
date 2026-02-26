@@ -8,6 +8,10 @@
 import { useParams, useNavigate } from "react-router-dom";
 import { useState, useRef } from "react";
 import { useGetInterviewQuery } from "../store/endpoints/interviews";
+import { useGetSettingsQuery } from "../store/endpoints/settings";
+import { useGetLiveKitConfigQuery, useGetLiveKitTokenMutation } from "../store/endpoints/livekit";
+import { useAppSelector } from "../store/hooks";
+import { selectUserRole } from "../store/authSlice";
 import type { EvaluationReport, ComputedScoring } from "../lib/report-generator";
 import { reportToPdf } from "../lib/reportToPdf";
 import { logErrorToServer } from "../lib/logError";
@@ -54,7 +58,16 @@ export function InterviewReportView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [observerLoading, setObserverLoading] = useState(false);
   const reportWrapperRef = useRef<HTMLDivElement>(null);
+  const userRole = useAppSelector(selectUserRole);
+  const { data: lkConfig } = useGetLiveKitConfigQuery();
+  const { data: settings } = useGetSettingsQuery();
+  const [getObserverToken] = useGetLiveKitTokenMutation();
+  const canObserve =
+    id &&
+    lkConfig?.enabled &&
+    (userRole === "ADMIN" || (settings?.livekitObserverTokenAllowed && (userRole === "HIRING_MANAGER" || userRole === "COLLEGE")));
 
   const { data, isLoading, isError, error } = useGetInterviewQuery(id!, { skip: !id });
   const detail = dataToDetail(data as InterviewApiResponse | undefined);
@@ -114,6 +127,19 @@ export function InterviewReportView() {
       logErrorToServer("PDF download failed", { details: err instanceof Error ? err.message : String(err), source: "report_pdf" });
     } finally {
       setDownloadingPdf(false);
+    }
+  };
+
+  const handleJoinAsObserver = async () => {
+    if (!id) return;
+    setObserverLoading(true);
+    try {
+      const { token, url, roomName } = await getObserverToken({ role: "observer", roomName: id }).unwrap();
+      navigate("/interview/observer", { state: { token, url, roomName } });
+    } catch (err) {
+      logErrorToServer("Observer token failed", { details: err instanceof Error ? err.message : String(err), source: "observer" });
+    } finally {
+      setObserverLoading(false);
     }
   };
 
@@ -469,6 +495,16 @@ export function InterviewReportView() {
           >
             {downloadingPdf ? "Generating PDF…" : <><IconPdf /> Download PDF</>}
           </button>
+          {canObserve && (
+            <button
+              type="button"
+              className="btn btn--secondary"
+              onClick={() => void handleJoinAsObserver()}
+              disabled={observerLoading}
+            >
+              {observerLoading ? "Joining…" : "Join as observer"}
+            </button>
+          )}
           <button className="btn btn--start" onClick={() => navigate("/dashboard")}>
             <IconBack /> Back to Dashboard
           </button>
