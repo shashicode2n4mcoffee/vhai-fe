@@ -52,7 +52,12 @@ function stripPrefix(name: string): string {
 
 // ── Component ─────────────────────────────────────────────────
 
-export function TemplateForm() {
+export interface TemplateFormProps {
+  /** When "professional", submit goes to Professional consent (LiveKit flow) instead of standard session. */
+  variant?: "standard" | "professional";
+}
+
+export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const [createTemplate] = useCreateTemplateMutation();
@@ -134,7 +139,11 @@ export function TemplateForm() {
       dispatch(storeTemplate(template));
       dispatch(setInterviewId(interview.id));
       dispatch(setGuardrails(interview.guardrails ?? null));
-      navigate("/interview/session");
+      if (variant === "professional") {
+        navigate("/interview/professional/consent");
+      } else {
+        navigate("/interview/session");
+      }
     } catch (err: unknown) {
       const anyErr = err as { status?: number; data?: { error?: string; upgradeUrl?: string } };
       if (anyErr.status === 402 || (anyErr.data?.upgradeUrl && anyErr.data?.error)) {
@@ -161,8 +170,8 @@ export function TemplateForm() {
           <span className="dash__brand-name">VocalHireAI</span>
         </button>
         <div className="dash__user-section">
-          <button type="button" className="dash__topbar-btn" onClick={() => step === "edit" ? setStep("pick") : navigate("/dashboard")}>
-            {step === "edit" ? "← Back to Templates" : "← Dashboard"}
+          <button type="button" className="dash__topbar-btn" onClick={() => step === "edit" ? setStep("pick") : navigate(variant === "professional" ? "/interview/professional" : "/dashboard")}>
+            {step === "edit" ? "← Back to Templates" : variant === "professional" ? "← Professional Interview" : "← Dashboard"}
           </button>
         </div>
       </header>
@@ -173,9 +182,13 @@ export function TemplateForm() {
         {step === "pick" && (
           <>
             <header className="template-header">
-              <h1 className="template-header__title">Choose Interview Template</h1>
+              <h1 className="template-header__title">
+                {variant === "professional" ? "Professional Video Interview — Choose Template" : "Choose Interview Template"}
+              </h1>
               <p className="template-header__subtitle">
-                Select a job role template to get started. The AI interviewer will be configured automatically.
+                {variant === "professional"
+                  ? "Select a template for your LiveKit video + AI voice interview. You will see consent next, then join the video call."
+                  : "Select a job role template to get started. The AI interviewer will be configured automatically."}
               </p>
             </header>
 
@@ -228,7 +241,9 @@ export function TemplateForm() {
         {step === "edit" && (
           <>
             <header className="template-header">
-              <h1 className="template-header__title">Configure Interview</h1>
+              <h1 className="template-header__title">
+                {variant === "professional" ? "Configure Professional Interview" : "Configure Interview"}
+              </h1>
               <p className="template-header__subtitle">
                 Review the AI behavior, edit the job description, and paste your resume.
               </p>
@@ -356,7 +371,13 @@ export function TemplateForm() {
                   <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
                   <line x1="12" x2="12" y1="19" y2="22" />
                 </svg>
-                <span>{isSubmitting ? "Starting Interview..." : "Start Interview"}</span>
+                <span>
+                  {isSubmitting
+                    ? (variant === "professional" ? "Continuing..." : "Starting Interview...")
+                    : variant === "professional"
+                      ? "Continue to consent"
+                      : "Start Interview"}
+                </span>
               </button>
             </form>
           </>

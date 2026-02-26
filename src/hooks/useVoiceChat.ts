@@ -184,6 +184,8 @@ export function useVoiceChat(
   configOverrides?: Partial<GeminiLiveConfig>,
   options?: VoiceChatOptions,
   guardrails?: OrgGuardrails | null,
+  /** When set (e.g. Professional flow with LiveKit), use this stream for recording instead of requesting new media */
+  externalStream?: MediaStream | null,
 ): [VoiceChatState, VoiceChatActions] {
   const config: GeminiLiveConfig = {
     ...DEFAULT_CONFIG,
@@ -370,9 +372,9 @@ export function useVoiceChat(
       const geminiConfig = await getGeminiConfig();
       config.apiKey = geminiConfig.apiKey;
       config.model = geminiConfig.model;
-      // 1. Start video recorder (webcam + mic for recording + AI audio playback)
+      // 1. Start video recorder (webcam + mic for recording + AI audio playback). Use external stream if provided (e.g. LiveKit).
       const recorder = new VideoRecorder();
-      const camStream = await recorder.start();
+      const camStream = await recorder.start(externalStream ?? undefined);
       recorderRef.current = recorder;
       setWebcamStream(camStream);
 

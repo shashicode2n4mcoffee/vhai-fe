@@ -30,20 +30,29 @@ export class VideoRecorder {
 
   // ---- lifecycle ----------------------------------------------------------
 
+  private ownedTracks = false;
+
   /**
    * Start webcam + recording. Returns the raw webcam MediaStream so the
    * UI can show a live `<video>` preview.
+   * @param existingStream — If provided, use this stream instead of requesting new media (e.g. when sharing with LiveKit). Caller must not stop its tracks until recording is done.
    */
-  async start(): Promise<MediaStream> {
-    // 1. Get webcam video + mic audio
-    this.webcamStream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
+  async start(existingStream?: MediaStream): Promise<MediaStream> {
+    // 1. Use provided stream or get webcam video + mic audio
+    if (existingStream) {
+      this.webcamStream = existingStream;
+      this.ownedTracks = false;
+    } else {
+      this.ownedTracks = true;
+      this.webcamStream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } },
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+    }
 
     // 2. Create a mixing AudioContext at the browser's default sample rate
     this.audioCtx = new AudioContext();
@@ -157,9 +166,12 @@ export class VideoRecorder {
   // ---- internals ----------------------------------------------------------
 
   private cleanup(): void {
-    // Stop all webcam / mic tracks
-    this.webcamStream?.getTracks().forEach((t) => t.stop());
+    // Stop tracks only if we created them (not when using external stream e.g. LiveKit)
+    if (this.webcamStream && this.ownedTracks) {
+      this.webcamStream.getTracks().forEach((t) => t.stop());
+    }
     this.webcamStream = null;
+    this.ownedTracks = false;
 
     void this.audioCtx?.close();
     this.audioCtx = null;

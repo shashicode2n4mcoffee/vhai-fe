@@ -43,6 +43,8 @@ import { PricingPage } from "./components/PricingPage";
 import { BillingPage } from "./components/BillingPage";
 import { CodingQuestionsPage } from "./components/CodingQuestionsPage";
 import { CodingQuestionDetailPage } from "./components/CodingQuestionDetailPage";
+import { ProfessionalInterviewSession } from "./components/ProfessionalInterviewSession";
+import { ProfessionalConsentPage } from "./components/ProfessionalConsentPage";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
@@ -67,6 +69,10 @@ export default function App() {
             <Route path="/interview/session" element={<VoiceChat />} />
             <Route path="/interview/report" element={<ConversationReport />} />
             <Route path="/interview/report/:id" element={<InterviewReportView />} />
+            <Route path="/interview/professional" element={<Navigate to="/interview/professional/new" replace />} />
+            <Route path="/interview/professional/new" element={<TemplateForm variant="professional" />} />
+            <Route path="/interview/professional/consent" element={<ProfessionalConsentPage />} />
+            <Route path="/interview/professional/session" element={<ProfessionalInterviewSession />} />
             <Route path="/aptitude" element={<AptitudeTest />} />
             <Route path="/aptitude/report/:id" element={<AptitudeReportView />} />
             <Route path="/coding" element={<CodingTest />} />

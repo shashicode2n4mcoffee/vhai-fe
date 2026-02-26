@@ -13,6 +13,7 @@ import { clearTokens } from "../store/api";
 import { clearGeminiCache } from "../lib/gemini-key";
 import { useGetDashboardQuery } from "../store/endpoints/analytics";
 import { useGetCreditsBalanceQuery } from "../store/endpoints/credits";
+import { useGetLiveKitConfigQuery } from "../store/endpoints/livekit";
 import { BoltIcon } from "./AppLogo";
 
 export function Dashboard() {
@@ -21,6 +22,7 @@ export function Dashboard() {
   const navigate = useNavigate();
   const { data: dashData, isLoading } = useGetDashboardQuery();
   const { data: credits } = useGetCreditsBalanceQuery();
+  const { data: livekitConfig } = useGetLiveKitConfigQuery();
 
   const stats = dashData?.stats ?? { totalInterviews: 0, completedInterviews: 0, totalAptitude: 0, totalCoding: 0, totalUsers: 0, avgInterviewScore: 0, avgAptitudeScore: 0, avgCodingScore: 0 };
   const recent = dashData?.recent ?? { interviews: [], aptitude: [], coding: [] };
@@ -201,6 +203,32 @@ export function Dashboard() {
             <ArrowIcon />
           </button>
         </div>
+
+        {/* Professional Video Interview (LiveKit + Gemini Live) */}
+        {livekitConfig?.enabled && (
+          <div
+            className={`dash__cta dash__cta--pro ${!canStartInterview ? "dash__cta--locked" : ""}`}
+            onClick={() => (canStartInterview ? navigate("/interview/professional") : navigate("/billing"))}
+          >
+            <div className="dash__cta-left">
+              <div className="dash__cta-icon dash__cta-icon--pro">
+                <VideoCameraIcon />
+              </div>
+              <div>
+                <h3 className="dash__cta-title">Professional Video Interview</h3>
+                <p className="dash__cta-desc">
+                  {canStartInterview
+                    ? "Live video AI interview. Video and audio are recorded and evaluated. One click to start."
+                    : "Purchase credits to unlock professional interviews."}
+                </p>
+              </div>
+            </div>
+            <button className="btn btn--start dash__cta-btn" type="button">
+              {canStartInterview ? "Start" : "Get credits"}
+              <ArrowIcon />
+            </button>
+          </div>
+        )}
 
         {/* Aptitude CTA */}
         <div
@@ -485,6 +513,15 @@ function CodeBracketIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="16 18 22 12 16 6" />
       <polyline points="8 6 2 12 8 18" />
+    </svg>
+  );
+}
+
+function VideoCameraIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
+      <rect x="2" y="6" width="14" height="12" rx="2" />
     </svg>
   );
 }
