@@ -17,11 +17,9 @@ import {
   type AptitudeResult,
 } from "../lib/aptitude";
 import { useToast } from "./Toast";
-import { getAccessToken } from "../store/api";
+import { useCreateAptitudeMutation, useUpdateAptitudeMutation } from "../store/endpoints/aptitude";
 import { BoltIcon } from "./AppLogo";
 import { logErrorToServer } from "../lib/logError";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 type Phase = "setup" | "loading" | "quiz" | "results";
 type Difficulty = "Easy" | "Medium" | "Hard" | "Mixed";
@@ -38,6 +36,8 @@ function formatTimer(ms: number): string {
 
 export function AptitudeTest() {
   const navigate = useNavigate();
+  const [createAptitude] = useCreateAptitudeMutation();
+  const [updateAptitude] = useUpdateAptitudeMutation();
   // Setup state
   const [topic, setTopic] = useState("");
   const [difficulty, setDifficulty] = useState<Difficulty>("Mixed");
@@ -73,37 +73,26 @@ export function AptitudeTest() {
       setRemainingMs(QUIZ_TIME_LIMIT_MS);
 
       // Save to backend (topic max 500 chars, difficulty: Easy | Medium | Hard | Mixed)
-      const token = getAccessToken();
       const topicForApi = topic.trim().slice(0, 500);
-      const res = await fetch(`${API_BASE}/aptitude`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          topic: topicForApi,
-          difficulty,
-          quiz: q,
-          total: q.questions.length,
-        }),
-      });
-      if (!res.ok) {
-        if (res.status === 402) {
-          toast.error("No aptitude credits. Purchase a plan to continue.");
-          setTimeout(() => navigate("/billing"), 1500);
-          setPhase("setup");
-          return;
-        }
-        const text = await res.text();
-        throw new Error(`Failed to save quiz: ${text}`);
-      }
-      const created = await res.json();
+      const created = await createAptitude({
+        topic: topicForApi,
+        difficulty,
+        quiz: q,
+        total: q.questions.length,
+      }).unwrap();
       setAptitudeId(created.id);
 
       setPhase("quiz");
       toast.update(tid, "success", `${q.questions.length} questions ready!`);
-    } catch (err) {
+    } catch (err: unknown) {
+      const status = err && typeof err === "object" && "status" in err ? (err as { status: number }).status : 0;
+      if (status === 402) {
+        toast.error("No aptitude credits. Purchase a plan to continue.");
+        setTimeout(() => navigate("/billing"), 1500);
+        setPhase("setup");
+        toast.update(tid, "error", "No credits");
+        return;
+      }
       const msg = err instanceof Error ? err.message : "Failed to generate quiz";
       setError(msg);
       setPhase("setup");
@@ -133,28 +122,21 @@ export function AptitudeTest() {
     // Update backend
     if (aptitudeId) {
       try {
-        const token = getAccessToken();
-        const resFetch = await fetch(`${API_BASE}/aptitude/${aptitudeId}`, {
-          method: "PUT",
-          headers: {
-            "Content-Type": "application/json",
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-          body: JSON.stringify({
+        await updateAptitude({
+          id: aptitudeId,
+          data: {
             answers: Object.fromEntries(
               Object.entries(res.answers).map(([k, v]) => [String(k), v]),
             ),
             score: res.score,
             percentage: res.percentage,
             passed: res.passed,
-          }),
-        });
-        if (!resFetch.ok) {
-          const text = await resFetch.text();
-          toast.error(`Failed to save results: ${text}`);
-        }
+          },
+        }).unwrap();
       } catch (err) {
-        const msg = err instanceof Error ? err.message : "Failed to save results";
+        const msg = err && typeof err === "object" && "data" in err && (err as { data?: { error?: string } }).data?.error
+          ? (err as { data: { error: string } }).data.error
+          : err instanceof Error ? err.message : "Failed to save results";
         toast.error(msg);
         logErrorToServer(msg, { details: err instanceof Error ? err.stack : undefined, source: "aptitude" });
       }
@@ -172,24 +154,19 @@ export function AptitudeTest() {
     setPhase("results");
 
     if (aptitudeId) {
-      const token = getAccessToken();
-      fetch(`${API_BASE}/aptitude/${aptitudeId}`, {
-        method: "PUT",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
+      updateAptitude({
+        id: aptitudeId,
+        data: {
           answers: Object.fromEntries(
             Object.entries(res.answers).map(([k, v]) => [String(k), v]),
           ),
           score: res.score,
           percentage: res.percentage,
           passed: res.passed,
-        }),
+        },
       }).catch(() => {});
     }
-  }, [quiz, answers, aptitudeId, toast]);
+  }, [quiz, answers, aptitudeId, toast, updateAptitude]);
 
   // Timer countdown during quiz phase
   useEffect(() => {

@@ -14,11 +14,17 @@ import { useGetCreditsBalanceQuery } from "../store/endpoints/credits";
 import { useDeleteOwnAccountMutation } from "../store/endpoints/users";
 import { BoltIcon } from "./AppLogo";
 import { logErrorToServer } from "../lib/logError";
+import { getApiBase } from "../lib/apiBase";
 
 interface AppSettings {
   defaultQuestionCount: number;
   defaultDifficulty: "Easy" | "Medium" | "Hard";
   cloudRecordingEnabled: boolean;
+}
+
+interface PublicConfig {
+  geminiModel?: string;
+  geminiReportModel?: string;
 }
 
 export function SettingsPage() {
@@ -28,6 +34,14 @@ export function SettingsPage() {
   const { data: creditsBalance } = useGetCreditsBalanceQuery();
   const [updateSettingsApi] = useUpdateSettingsMutation();
   const [deleteAccountApi] = useDeleteOwnAccountMutation();
+  const [publicConfig, setPublicConfig] = useState<PublicConfig | null>(null);
+
+  useEffect(() => {
+    fetch(`${getApiBase()}/config/public`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then(setPublicConfig)
+      .catch(() => setPublicConfig(null));
+  }, []);
 
   const hasBusinessPlan = creditsBalance?.hasBusinessPlan ?? false;
 
@@ -282,11 +296,15 @@ export function SettingsPage() {
             </div>
             <div className="pg-about-row">
               <span className="pg-about-label">Live Model</span>
-              <span className="pg-about-value">{import.meta.env.VITE_GEMINI_MODEL || "Not set"}</span>
+              <span className="pg-about-value">
+                {publicConfig?.geminiModel ?? (import.meta.env.VITE_GEMINI_MODEL ? `${import.meta.env.VITE_GEMINI_MODEL} (dev)` : "—")}
+              </span>
             </div>
             <div className="pg-about-row">
               <span className="pg-about-label">Report Model</span>
-              <span className="pg-about-value">{import.meta.env.VITE_GEMINI_REPORT_MODEL || "gemini-2.5-flash-lite"}</span>
+              <span className="pg-about-value">
+                {publicConfig?.geminiReportModel ?? (import.meta.env.VITE_GEMINI_REPORT_MODEL ? `${import.meta.env.VITE_GEMINI_REPORT_MODEL} (dev)` : "gemini-2.5-flash-lite")}
+              </span>
             </div>
             <div className="pg-about-row">
               <span className="pg-about-label">Storage</span>

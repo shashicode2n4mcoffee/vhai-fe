@@ -16,7 +16,7 @@ import {
 } from "../lib/report-generator";
 import { useToast } from "./Toast";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { getAccessToken } from "../store/api";
+import { useUpdateInterviewMutation } from "../store/endpoints/interviews";
 import {
   selectTemplate,
   selectTranscript,
@@ -29,8 +29,6 @@ import {
 } from "../store/interviewSlice";
 import { getTranscriptBackup, clearTranscriptBackup } from "../lib/transcriptBackup";
 import { reportToPdf } from "../lib/reportToPdf";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 type Status = "loading" | "done" | "error";
 
@@ -131,6 +129,7 @@ function ReportInner({
   onBackToDashboard: () => void;
 }) {
   const navigate = useNavigate();
+  const [updateInterview] = useUpdateInterviewMutation();
   const [status, setStatus] = useState<Status>("loading");
   const [report, setReport] = useState<EvaluationReport | null>(null);
   const [error, setError] = useState("");
@@ -219,26 +218,21 @@ function ReportInner({
           // Mark interview so dashboard doesn't stay "Pending"
           if (interviewId) {
             try {
-              const token = getAccessToken();
               const first = transcript[0];
               const last = transcript[transcript.length - 1];
               const durationSeconds =
                 transcript.length >= 2 && first && last
                   ? Math.round((last.timestamp - first.timestamp) / 1000)
                   : 0;
-              await fetch(`${API_BASE}/interviews/${interviewId}`, {
-                method: "PUT",
-                headers: {
-                  "Content-Type": "application/json",
-                  ...(token ? { Authorization: `Bearer ${token}` } : {}),
-                },
-                body: JSON.stringify({
+              await updateInterview({
+                id: interviewId,
+                data: {
                   transcript,
                   duration: durationSeconds,
                   recommendation: "Report failed",
                   status: "COMPLETED",
-                }),
-              });
+                },
+              }).unwrap();
             } catch {
               // ignore
             }
@@ -297,14 +291,9 @@ function ReportInner({
 
       (async () => {
         try {
-          const token = getAccessToken();
-          const res = await fetch(`${API_BASE}/interviews/${interviewId}`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
+          await updateInterview({
+            id: interviewId,
+            data: {
               report,
               scoring,
               transcript,
@@ -312,14 +301,12 @@ function ReportInner({
               overallScore: scoring.overallScore,
               recommendation: scoring.recommendation,
               status: "COMPLETED",
-            }),
-          });
-          if (!res.ok) {
-            const text = await res.text();
-            toastRef.current.error(`Failed to save report: ${text}`);
-          }
+            },
+          }).unwrap();
         } catch (err) {
-          const msg = err instanceof Error ? err.message : "Failed to save report";
+          const msg = err && typeof err === "object" && "data" in err && typeof (err as { data?: { error?: string } }).data?.error === "string"
+            ? (err as { data: { error: string } }).data.error
+            : err instanceof Error ? err.message : "Failed to save report";
           toastRef.current.error(msg);
           const { logErrorToServer } = await import("../lib/logError");
           logErrorToServer(msg, { details: err instanceof Error ? err.stack : undefined, source: "interview_report" });

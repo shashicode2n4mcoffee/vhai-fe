@@ -4,9 +4,11 @@
  * Caches the key in memory for its TTL duration.
  * All frontend Gemini calls use this instead of VITE_GEMINI_API_KEY.
  * Uses a connection timeout and one retry to avoid hanging on slow networks.
+ * On 401, attempts token refresh once and retries (so expired access token still works).
  */
 
-import { getAccessToken } from "../store/api";
+import { getAccessToken, getRefreshToken, setTokens, clearTokens } from "../store/api";
+import { getApiBase } from "./apiBase";
 
 interface GeminiConfig {
   apiKey: string;
@@ -16,10 +18,23 @@ interface GeminiConfig {
 }
 
 let cachedConfig: GeminiConfig | null = null;
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 const GEMINI_TOKEN_TIMEOUT_MS = 15_000;
 const GEMINI_TOKEN_RETRIES = 2;
+
+/** Try to refresh access token; returns new access token or null */
+async function tryRefreshToken(): Promise<string | null> {
+  const refreshToken = getRefreshToken();
+  if (!refreshToken) return null;
+  const res = await fetch(`${getApiBase()}/auth/refresh`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ refreshToken }),
+  });
+  if (!res.ok) return null;
+  const data = (await res.json()) as { accessToken: string; refreshToken: string };
+  setTokens(data.accessToken, data.refreshToken);
+  return data.accessToken;
+}
 
 async function fetchWithTimeout(
   url: string,
@@ -42,16 +57,17 @@ export async function getGeminiConfig(): Promise<GeminiConfig> {
     return cachedConfig;
   }
 
-  const token = getAccessToken();
+  let token = getAccessToken();
   if (!token) {
     throw new Error("Not authenticated. Please log in to use AI features.");
   }
 
   let lastError: Error | null = null;
+  let triedRefresh = false;
   for (let attempt = 1; attempt <= GEMINI_TOKEN_RETRIES; attempt++) {
     try {
       const res = await fetchWithTimeout(
-        `${API_BASE}/gemini/token`,
+        `${getApiBase()}/gemini/token`,
         { headers: { Authorization: `Bearer ${token}` } },
         GEMINI_TOKEN_TIMEOUT_MS,
       );
@@ -59,6 +75,12 @@ export async function getGeminiConfig(): Promise<GeminiConfig> {
       if (!res.ok) {
         if (res.status === 401 || res.status === 403) {
           cachedConfig = null;
+          // Try refresh once, then retry with new token
+          if (!triedRefresh && (token = (await tryRefreshToken()) ?? null)) {
+            triedRefresh = true;
+            continue;
+          }
+          clearTokens();
           throw new Error("Session expired. Please log in again to use AI features.");
         }
         if (res.status === 429) {

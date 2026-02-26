@@ -3,69 +3,28 @@
  */
 
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
 import Editor from "@monaco-editor/react";
-import { getAccessToken } from "../store/api";
+import { useGetCodingQuery } from "../store/endpoints/coding";
 import { LANGUAGE_CONFIG, type CodingDetail } from "../lib/coding-test";
-import { logErrorToServer } from "../lib/logError";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function CodingReportView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [detail, setDetail] = useState<CodingDetail | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!id) {
-      setLoading(false);
-      setDetail(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const token = getAccessToken();
-    fetch(`${API_BASE}/coding/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Failed to load coding test (${res.status})`);
+  const { data, isLoading, isError, error } = useGetCodingQuery(id!, { skip: !id });
+  const detail: CodingDetail | null =
+    data?.problem && data?.evaluation
+      ? {
+          problem: (data as { problem: string }).problem,
+          userCode: (data as { userCode?: string }).userCode ?? "",
+          evaluation: (data as { evaluation: unknown }).evaluation,
+          language: (data as { language?: string }).language ?? "javascript",
+          difficulty: (data as { difficulty?: string }).difficulty ?? "Medium",
+          timeSpent: (data as { timeSpent?: number }).timeSpent ?? 0,
         }
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        if (!data?.problem || !data?.evaluation) {
-          setDetail(null);
-          return;
-        }
-        setDetail({
-          problem: data.problem,
-          userCode: data.userCode ?? "",
-          evaluation: data.evaluation,
-          language: data.language ?? "javascript",
-          difficulty: data.difficulty ?? "Medium",
-          timeSpent: data.timeSpent ?? 0,
-        });
-      })
-      .catch((err) => {
-        const msg = err?.message ?? "Failed to load coding test";
-        if (!cancelled) setError(msg);
-        setDetail(null);
-        logErrorToServer(msg, { source: "coding_report" });
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [id]);
+      : null;
+  const errorMessage = isError && error && "data" in error ? (error as { data?: { error?: string } }).data?.error ?? "Failed to load coding test" : null;
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="code-page">
         <div className="code-results-wrap" style={{ textAlign: "center", paddingTop: 80 }}>
@@ -76,12 +35,12 @@ export function CodingReportView() {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className="code-page">
         <div className="code-results-wrap" style={{ textAlign: "center", paddingTop: 80 }}>
           <h2 style={{ marginBottom: 12 }}>Error</h2>
-          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{error}</p>
+          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{errorMessage}</p>
           <button className="btn btn--primary" onClick={() => navigate("/dashboard")}>
             Back to Dashboard
           </button>

@@ -3,8 +3,12 @@
  *
  * Features:
  * - Automatic JWT token attachment
- * - Token refresh on 401 responses
+ * - Token refresh on 401 responses (uses httpOnly cookie when same-origin, else body)
  * - Tag-based cache invalidation
+ *
+ * Security: Access token in sessionStorage (cleared when tab closes; reduces XSS scope).
+ * Refresh token: when backend sets httpOnly cookie it is not stored here; we still
+ * store refresh in localStorage when received in body for cross-origin / fallback.
  */
 
 import {
@@ -14,34 +18,36 @@ import {
   type FetchArgs,
   type FetchBaseQueryError,
 } from "@reduxjs/toolkit/query/react";
+import { getApiBase } from "../lib/apiBase";
 
 const TOKEN_KEY = "vocalhireai_token";
 const REFRESH_KEY = "vocalhireai_refresh_token";
 
-// ── Token helpers ───────────────────────────────────────
-
+/** Access token: sessionStorage so it is not shared across tabs and is cleared on tab close. */
 export function getAccessToken(): string | null {
-  return localStorage.getItem(TOKEN_KEY);
+  return sessionStorage.getItem(TOKEN_KEY);
 }
 
+/** Refresh token: localStorage fallback when not using httpOnly cookie (e.g. cross-origin). */
 export function getRefreshToken(): string | null {
   return localStorage.getItem(REFRESH_KEY);
 }
 
 export function setTokens(accessToken: string, refreshToken: string): void {
-  localStorage.setItem(TOKEN_KEY, accessToken);
+  sessionStorage.setItem(TOKEN_KEY, accessToken);
   localStorage.setItem(REFRESH_KEY, refreshToken);
 }
 
 export function clearTokens(): void {
-  localStorage.removeItem(TOKEN_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(REFRESH_KEY);
 }
 
 // ── Base query with auth header ─────────────────────────
 
 const baseQuery = fetchBaseQuery({
-  baseUrl: import.meta.env.VITE_API_BASE_URL || "/api",
+  baseUrl: getApiBase(),
+  credentials: "include",
   prepareHeaders: (headers) => {
     const token = getAccessToken();
     if (token) {

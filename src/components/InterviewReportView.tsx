@@ -6,13 +6,11 @@
  */
 
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useRef } from "react";
-import { getAccessToken } from "../store/api";
+import { useState, useRef } from "react";
+import { useGetInterviewQuery } from "../store/endpoints/interviews";
 import type { EvaluationReport, ComputedScoring } from "../lib/report-generator";
 import { reportToPdf } from "../lib/reportToPdf";
 import { logErrorToServer } from "../lib/logError";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 // Saved detail shape (mirrors what ConversationReport persists)
 interface InterviewDetailData {
@@ -41,62 +39,28 @@ function formatDuration(seconds: number | null): string {
   return `${m} min ${s} sec`;
 }
 
+function dataToDetail(data: InterviewApiResponse | undefined): InterviewDetailData | null {
+  if (!data?.report || !data?.scoring) return null;
+  const date = data.completedAt || data.createdAt;
+  return {
+    report: data.report,
+    scoring: data.scoring,
+    interviewDate: date ? new Date(date).toLocaleDateString() : "—",
+    duration: formatDuration(data.duration),
+  };
+}
+
 export function InterviewReportView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [detail, setDetail] = useState<InterviewDetailData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [downloadingPdf, setDownloadingPdf] = useState(false);
   const reportWrapperRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    if (!id) {
-      setLoading(false);
-      setDetail(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const token = getAccessToken();
-    fetch(`${API_BASE}/interviews/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Failed to load interview (${res.status})`);
-        }
-        return res.json() as Promise<InterviewApiResponse>;
-      })
-      .then((data) => {
-        if (cancelled) return;
-        if (!data?.report || !data?.scoring) {
-          setDetail(null);
-          return;
-        }
-        const date = data.completedAt || data.createdAt;
-        setDetail({
-          report: data.report,
-          scoring: data.scoring,
-          interviewDate: date ? new Date(date).toLocaleDateString() : "—",
-          duration: formatDuration(data.duration),
-        });
-      })
-      .catch((err) => {
-        const msg = err?.message ?? "Failed to load interview";
-        if (!cancelled) setError(msg);
-        setDetail(null);
-        logErrorToServer(msg, { source: "interview_report" });
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [id]);
+  const { data, isLoading, isError, error } = useGetInterviewQuery(id!, { skip: !id });
+  const detail = dataToDetail(data as InterviewApiResponse | undefined);
+  const errorMessage = isError && error && "data" in error ? (error as { data?: { error?: string } }).data?.error ?? "Failed to load interview" : null;
 
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="report-page">
         <div className="report-error" style={{ textAlign: "center", paddingTop: 80 }}>
@@ -107,12 +71,12 @@ export function InterviewReportView() {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className="report-page">
         <div className="report-error" style={{ textAlign: "center", paddingTop: 80 }}>
           <h2 style={{ marginBottom: 12 }}>Error</h2>
-          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{error}</p>
+          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{errorMessage}</p>
           <button className="btn btn--start" onClick={() => navigate("/dashboard")}>
             Back to Dashboard
           </button>

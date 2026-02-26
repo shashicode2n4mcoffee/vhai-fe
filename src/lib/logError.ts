@@ -5,8 +5,7 @@
  */
 
 import { getAccessToken } from "../store/api";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
+import { getApiBase } from "./apiBase";
 
 function getCurrentUserFromStorage(): { id: string; name: string } | null {
   try {
@@ -34,7 +33,7 @@ export function logErrorToServer(
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (token) headers["Authorization"] = `Bearer ${token}`;
 
-  fetch(`${API_BASE}/errors/log`, {
+  fetch(`${getApiBase()}/errors/log`, {
     method: "POST",
     headers,
     body: JSON.stringify(body),

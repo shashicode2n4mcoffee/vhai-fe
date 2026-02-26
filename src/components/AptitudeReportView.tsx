@@ -3,68 +3,26 @@
  */
 
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect } from "react";
-import { getAccessToken } from "../store/api";
+import { useGetAptitudeQuery } from "../store/endpoints/aptitude";
 import type { AptitudeResult } from "../lib/aptitude";
-import { logErrorToServer } from "../lib/logError";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 export function AptitudeReportView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [result, setResult] = useState<AptitudeResult | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const { data, isLoading, isError, error } = useGetAptitudeQuery(id!, { skip: !id });
+  const result: AptitudeResult | null = data?.quiz
+    ? {
+        quiz: data.quiz,
+        answers: (data as { answers?: Record<string, string> }).answers ?? {},
+        score: (data as { score?: number }).score ?? 0,
+        total: (data as { total?: number }).total ?? 0,
+        percentage: (data as { percentage?: number }).percentage ?? 0,
+        passed: (data as { passed?: boolean }).passed ?? false,
+      }
+    : null;
+  const errorMessage = isError && error && "data" in error ? (error as { data?: { error?: string } }).data?.error ?? "Failed to load aptitude test" : null;
 
-  useEffect(() => {
-    if (!id) {
-      setLoading(false);
-      setResult(null);
-      return;
-    }
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    const token = getAccessToken();
-    fetch(`${API_BASE}/aptitude/${id}`, {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-    })
-      .then(async (res) => {
-        if (!res.ok) {
-          const text = await res.text();
-          throw new Error(text || `Failed to load aptitude test (${res.status})`);
-        }
-        return res.json();
-      })
-      .then((data) => {
-        if (cancelled) return;
-        if (!data?.quiz) {
-          setResult(null);
-          return;
-        }
-        setResult({
-          quiz: data.quiz,
-          answers: data.answers ?? {},
-          score: data.score ?? 0,
-          total: data.total ?? 0,
-          percentage: data.percentage ?? 0,
-          passed: data.passed ?? false,
-        });
-      })
-      .catch((err) => {
-        const msg = err?.message ?? "Failed to load aptitude test";
-        if (!cancelled) setError(msg);
-        setResult(null);
-        logErrorToServer(msg, { source: "aptitude_report" });
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => { cancelled = true; };
-  }, [id]);
-
-  if (loading) {
+  if (isLoading) {
     return (
       <div className="apt-page">
         <div className="apt-wrapper" style={{ textAlign: "center", paddingTop: 80 }}>
@@ -75,12 +33,12 @@ export function AptitudeReportView() {
     );
   }
 
-  if (error) {
+  if (errorMessage) {
     return (
       <div className="apt-page">
         <div className="apt-wrapper" style={{ textAlign: "center", paddingTop: 80 }}>
           <h2 style={{ marginBottom: 12 }}>Error</h2>
-          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{error}</p>
+          <p style={{ color: "rgba(255,255,255,0.5)", marginBottom: 24 }}>{errorMessage}</p>
           <button className="btn btn--primary" onClick={() => navigate("/dashboard")}>
             Back to Dashboard
           </button>

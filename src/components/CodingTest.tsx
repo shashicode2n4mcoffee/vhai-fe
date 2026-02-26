@@ -24,10 +24,8 @@ import {
 import { CodeTerminal } from "./CodeTerminal";
 import { useToast } from "./Toast";
 import { logErrorToServer } from "../lib/logError";
-import { getAccessToken } from "../store/api";
+import { useCreateCodingMutation, useUpdateCodingMutation } from "../store/endpoints/coding";
 import { BoltIcon } from "./AppLogo";
-
-const API_BASE = import.meta.env.VITE_API_BASE_URL || "/api";
 
 type Phase = "setup" | "loading" | "editor" | "evaluating" | "results";
 
@@ -36,6 +34,8 @@ const LANGUAGES = Object.entries(LANGUAGE_CONFIG) as [CodingLanguage, (typeof LA
 export function CodingTest() {
   const navigate = useNavigate();
   const toast = useToast();
+  const [createCoding] = useCreateCodingMutation();
+  const [updateCoding] = useUpdateCodingMutation();
 
   // Setup state
   const [topic, setTopic] = useState("");
@@ -90,41 +90,30 @@ export function CodingTest() {
       setActiveTab("description");
 
       // Save to backend
-      const token = getAccessToken();
-      const res = await fetch(`${API_BASE}/coding`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      const created = await createCoding({
+        topic: topic.trim(),
+        language,
+        difficulty,
+        problem: {
+          ...p,
+          language: p.language,
+          difficulty: p.difficulty,
         },
-        body: JSON.stringify({
-          topic: topic.trim(),
-          language,
-          difficulty,
-          problem: {
-            ...p,
-            language: p.language,
-            difficulty: p.difficulty,
-          },
-        }),
-      });
-      if (!res.ok) {
-        if (res.status === 402) {
-          toast.error("No coding credits. Purchase a plan to continue.");
-          setTimeout(() => navigate("/billing"), 1500);
-          setPhase("setup");
-          return;
-        }
-        const text = await res.text();
-        throw new Error(`Failed to save challenge: ${text}`);
-      }
-      const created = await res.json();
+      }).unwrap();
       setCodingId(created.id);
 
       setPhase("editor");
       startTimer();
       toast.update(tid, "success", `"${p.title}" ready — good luck!`);
-    } catch (err) {
+    } catch (err: unknown) {
+      const status = err && typeof err === "object" && "status" in err ? (err as { status: number }).status : 0;
+      if (status === 402) {
+        toast.error("No coding credits. Purchase a plan to continue.");
+        setTimeout(() => navigate("/billing"), 1500);
+        setPhase("setup");
+        toast.update(tid, "error", "No credits");
+        return;
+      }
       const msg = err instanceof Error ? err.message : "Failed to generate problem";
       setError(msg);
       setPhase("setup");
@@ -154,27 +143,20 @@ export function CodingTest() {
       // Update backend
       if (codingId) {
         try {
-          const token = getAccessToken();
-          const res = await fetch(`${API_BASE}/coding/${codingId}`, {
-            method: "PUT",
-            headers: {
-              "Content-Type": "application/json",
-              ...(token ? { Authorization: `Bearer ${token}` } : {}),
-            },
-            body: JSON.stringify({
+          await updateCoding({
+            id: codingId,
+            data: {
               userCode: code,
               evaluation: ev,
               score: ev.overallScore,
               verdict: ev.verdict,
               timeSpent,
-            }),
-          });
-          if (!res.ok) {
-            const text = await res.text();
-            toast.error(`Failed to save results: ${text}`);
-          }
+            },
+          }).unwrap();
         } catch (saveErr) {
-          const saveMsg = saveErr instanceof Error ? saveErr.message : "Failed to save results";
+          const saveMsg = saveErr && typeof saveErr === "object" && "data" in saveErr && (saveErr as { data?: { error?: string } }).data?.error
+            ? (saveErr as { data: { error: string } }).data.error
+            : saveErr instanceof Error ? saveErr.message : "Failed to save results";
           toast.error(saveMsg);
           logErrorToServer(saveMsg, { details: saveErr instanceof Error ? saveErr.stack : undefined, source: "coding" });
         }
