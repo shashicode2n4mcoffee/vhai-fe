@@ -13,6 +13,8 @@ export interface LiveKitTokenResponse {
   url: string;
   roomName: string;
   interviewId?: string;
+  /** True when backend dispatched a LiveKit agent to the room; frontend must not start Gemini. */
+  agentDispatched?: boolean;
 }
 
 const livekitApi = api.injectEndpoints({

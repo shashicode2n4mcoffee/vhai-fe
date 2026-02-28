@@ -45,13 +45,13 @@ export function ProfessionalConsentPage() {
   const handleStart = async () => {
     setError(null);
     try {
-      const { token, url, roomName } = await getToken({
+      const { token, url, roomName, agentDispatched } = await getToken({
         interviewId,
         templateId: template.id,
         participantName: "Candidate",
       }).unwrap();
       navigate("/interview/professional/session", {
-        state: { token, url, roomName, dataSaver },
+        state: { token, url, roomName, dataSaver, agentDispatched: agentDispatched === true },
       });
     } catch (e) {
       const msg =

@@ -12,6 +12,7 @@ import {
   RoomAudioRenderer,
   TrackLoop,
   useTracks,
+  useParticipants,
   ParticipantTile,
   useConnectionState,
   useEnsureRoom,
@@ -62,9 +63,11 @@ interface SessionState {
   url: string;
   roomName: string;
   dataSaver?: boolean;
+  /** When true, backend dispatched a LiveKit agent to the room; do not start Gemini. */
+  agentDispatched?: boolean;
 }
 
-function ProfessionalSessionInner() {
+function ProfessionalSessionInner({ agentDispatched: agentDispatchedFromState }: { agentDispatched?: boolean }) {
   const navigate = useNavigate();
   const dispatch = useAppDispatch();
   const room = useEnsureRoom();
@@ -74,7 +77,11 @@ function ProfessionalSessionInner() {
   const { data: settings } = useGetSettingsQuery();
   const [reportQuality] = useReportLiveKitQualityMutation();
   const cameraTracks = useTracks([Track.Source.Camera]);
+  const participants = useParticipants();
+  const remoteParticipants = participants.filter((p) => p.identity !== room.localParticipant.identity);
   const startedRef = useRef(false);
+  /** Use backend's decision (agent dispatched to this room); fallback to settings so we never start Gemini when agent is in the room. */
+  const useLiveKitAgent = agentDispatchedFromState === true || settings?.livekitAgentEnabled === true;
   const [connectionQualityLabel, setConnectionQualityLabel] = useState<NetworkQuality>("stable");
   const worstQualityRef = useRef<NetworkQuality>("stable");
   const [reconnectMessage, setReconnectMessage] = useState<"reconnecting" | "back-online" | null>(null);
@@ -171,38 +178,44 @@ function ProfessionalSessionInner() {
     };
   }, [lkConnectionState]);
 
-  // Auto-start Gemini voice when mounted (consent already given on previous page)
+  // Auto-start Gemini voice when mounted (consent already given on previous page).
+  // When LiveKit agent was dispatched to this room (or setting is on), the agent speaks—do not start Gemini.
   useEffect(() => {
     if (!template || startedRef.current) return;
+    if (useLiveKitAgent) return; // LiveKit agent is in the room; no Gemini voice
+    // When token didn't include agentDispatched, wait for settings so we don't start Gemini before we know
+    if (agentDispatchedFromState === undefined && settings === undefined) return;
     startedRef.current = true;
     void actions.start();
-  }, [template, actions]);
+  }, [template, actions, useLiveKitAgent, agentDispatchedFromState, settings]);
 
   const handleEnd = useCallback(async () => {
-    const finalTranscript = [...state.transcript];
-    if (state.pendingUserText.trim()) {
-      finalTranscript.push({
-        id: `user-final-${Date.now()}`,
-        role: "user",
-        text: state.pendingUserText.trim(),
-        timestamp: Date.now(),
+    const finalTranscript = useLiveKitAgent ? [] : [...state.transcript];
+    if (!useLiveKitAgent) {
+      if (state.pendingUserText.trim()) {
+        finalTranscript.push({
+          id: `user-final-${Date.now()}`,
+          role: "user",
+          text: state.pendingUserText.trim(),
+          timestamp: Date.now(),
+        });
+      }
+      if (state.pendingAssistantText.trim()) {
+        finalTranscript.push({
+          id: `assistant-final-${Date.now()}`,
+          role: "assistant",
+          text: state.pendingAssistantText.trim(),
+          timestamp: Date.now(),
+        });
+      }
+      saveTranscriptBackup({
+        transcript: finalTranscript,
+        pendingUserText: "",
+        pendingAssistantText: "",
+        template: template!,
       });
     }
-    if (state.pendingAssistantText.trim()) {
-      finalTranscript.push({
-        id: `assistant-final-${Date.now()}`,
-        role: "assistant",
-        text: state.pendingAssistantText.trim(),
-        timestamp: Date.now(),
-      });
-    }
-    saveTranscriptBackup({
-      transcript: finalTranscript,
-      pendingUserText: "",
-      pendingAssistantText: "",
-      template: template!,
-    });
-    const videoBlob = await actions.stop();
+    const videoBlob = useLiveKitAgent ? null : await actions.stop();
     const videoUrl = videoBlob ? URL.createObjectURL(videoBlob) : null;
     dispatch(
       setInterviewResult({
@@ -212,7 +225,7 @@ function ProfessionalSessionInner() {
       }),
     );
     navigate("/interview/report");
-  }, [template, state.transcript, state.pendingUserText, state.pendingAssistantText, actions, dispatch, navigate]);
+  }, [template, state.transcript, state.pendingUserText, state.pendingAssistantText, actions, dispatch, navigate, useLiveKitAgent]);
 
   handleEndRef.current = handleEnd;
 
@@ -267,13 +280,30 @@ function ProfessionalSessionInner() {
       )}
       <div className="pro-session__layout">
         <div className="pro-session__video">
+          {/* TrackLoop provides TrackRefContext so ParticipantTile works */}
           <TrackLoop tracks={cameraTracks}>
             <ParticipantTile />
           </TrackLoop>
+          {/* Audio-only participants (e.g. LiveKit agent with no camera) get a name placeholder */}
+          {remoteParticipants
+            .filter((p) => !cameraTracks.some((t) => t.participant.identity === p.identity))
+            .map((p) => (
+              <div key={p.identity} className="pro-session__participant-placeholder">
+                {p.name || p.identity}
+              </div>
+            ))}
         </div>
         <div className="pro-session__voice">
           <div className="pro-session__voice-header">
-            <ConnectionStatus connectionState={state.connectionState} chatPhase={state.chatPhase} />
+            {useLiveKitAgent ? (
+              <span className="pro-session__agent-status" title="AI interviewer is in the LiveKit call">
+                {remoteParticipants.length > 0
+                  ? "Speaking with AI interviewer in the call"
+                  : "Waiting for AI interviewer…"}
+              </span>
+            ) : (
+              <ConnectionStatus connectionState={state.connectionState} chatPhase={state.chatPhase} />
+            )}
             <span
               className={`pro-session__network-badge pro-session__network-badge--${connectionQualityLabel}`}
               title="LiveKit connection quality"
@@ -305,8 +335,13 @@ function ProfessionalSessionInner() {
               End Interview
             </button>
           </div>
-          {state.error && <p className="pro-session__error">{state.error}</p>}
+          {state.error && !useLiveKitAgent && <p className="pro-session__error">{state.error}</p>}
           <div className="pro-session__transcript">
+            {useLiveKitAgent && (
+              <p className="pro-session__agent-hint">
+                Conversation is in the video call. The AI interviewer will speak through the call—use your microphone to respond.
+              </p>
+            )}
             {state.transcript.map((e) => (
               <div key={e.id} className={`pro-session__line pro-session__line--${e.role}`}>
                 <strong>{e.role === "user" ? "You" : "AI"}:</strong> {e.text}
@@ -330,8 +365,8 @@ function ProfessionalSessionInner() {
 }
 
 /** Wrapper that uses local participant to get MediaStream and pass to voice chat (optional future: pass stream to useVoiceChat). */
-function RoomContent() {
-  return <ProfessionalSessionInner />;
+function RoomContent({ agentDispatched }: { agentDispatched?: boolean }) {
+  return <ProfessionalSessionInner agentDispatched={agentDispatched} />;
 }
 
 export function ProfessionalInterviewSession() {
@@ -372,7 +407,7 @@ export function ProfessionalInterviewSession() {
       onError={(err) => console.error("[LiveKit]", err)}
       style={{ height: "100vh", display: "flex", flexDirection: "column" }}
     >
-      <RoomContent />
+      <RoomContent agentDispatched={sessionState.agentDispatched} />
     </LiveKitRoom>
   );
 }
