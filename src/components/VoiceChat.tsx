@@ -19,7 +19,7 @@ import { FlagsTimeline } from "./FlagsTimeline";
 import { MalpracticeOverlay, type MalpracticeKind } from "./MalpracticeOverlay";
 import { useProctoring } from "../proctoring/useProctoring";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { selectTemplate, selectGuardrails, selectInterviewId, selectSelectedTemplateNameForFullFlow, setInterviewResult, resetInterview } from "../store/interviewSlice";
+import { selectTemplate, selectGuardrails, selectInterviewId, selectSelectedTemplateNameForFullFlow, selectSelectedTemplateIdForFullFlow, setInterviewResult, resetInterview } from "../store/interviewSlice";
 import { saveTranscriptBackup, clearTranscriptBackup } from "../lib/transcriptBackup";
 import { generateReport, computeScoring } from "../lib/report-generator";
 import { saveFullFlowInterview } from "../lib/fullFlowStorage";
@@ -73,6 +73,7 @@ function VoiceChatInner({
 }) {
   const interviewId = useAppSelector(selectInterviewId);
   const templateNameForFullFlow = useAppSelector(selectSelectedTemplateNameForFullFlow);
+  const selectedTemplateIdForFullFlow = useAppSelector(selectSelectedTemplateIdForFullFlow);
   const [updateInterview] = useUpdateInterviewMutation();
 
   const startedRef = useRef(false);
@@ -85,6 +86,7 @@ function VoiceChatInner({
   const [consentGiven, setConsentGiven] = useState(false);
   const [fullscreenDeclined, setFullscreenDeclined] = useState(false);
   const [pendingMalpractice, setPendingMalpractice] = useState<MalpracticeKind | null>(null);
+  const [endingTo, setEndingTo] = useState<"coding" | "report" | null>(null);
   const tabWasHiddenRef = useRef(false);
   const windowHadBlurRef = useRef(false);
 
@@ -154,6 +156,7 @@ function VoiceChatInner({
     };
     const onFullscreenChange = () => {
       if (!document.fullscreenElement) {
+        if (endingRef.current) return;
         setPendingMalpractice("fullscreen_exit");
       } else {
         setPendingMalpractice((prev) => (prev === "fullscreen_exit" ? null : prev));
@@ -204,6 +207,11 @@ function VoiceChatInner({
   const handleEnd = async () => {
     if (endingRef.current) return;
     endingRef.current = true;
+
+    const fromFullFlowByState = (locationState as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+    const fromFullFlow = fromFullFlowByState || !!selectedTemplateIdForFullFlow;
+    setEndingTo(fromFullFlow ? "coding" : "report");
+
     try {
       if (document.fullscreenElement) {
         try {
@@ -242,7 +250,6 @@ function VoiceChatInner({
 
       dispatch(setInterviewResult({ transcript: finalTranscript, videoUrl }));
 
-      const fromFullFlow = (locationState as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
       if (fromFullFlow) {
         try {
           const report = await generateReport(finalTranscript, template);
@@ -286,13 +293,16 @@ function VoiceChatInner({
         }
         clearTranscriptBackup();
         if (videoUrl) URL.revokeObjectURL(videoUrl);
-        dispatch(resetInterview());
-        navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined } });
+        navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined }, replace: true });
+        setTimeout(() => dispatch(resetInterview()), 0);
       } else {
         navigate("/interview/report", { state: locationState });
       }
+    } catch (err) {
+      throw err;
     } finally {
       endingRef.current = false;
+      setEndingTo(null);
     }
   };
 
@@ -496,7 +506,16 @@ function VoiceChatInner({
 
       {/* ---- Controls ---- */}
       <div className="voice-chat__controls">
-        {isActive ? (
+        {endingTo ? (
+          <div className="voice-chat__ending" style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 8 }}>
+            <div className="report-loading__spinner" style={{ width: 32, height: 32 }} />
+            <span style={{ fontSize: "1rem" }}>
+              {endingTo === "coding"
+                ? "Saving report… Taking you to coding challenge."
+                : "Saving… Taking you to report."}
+            </span>
+          </div>
+        ) : isActive ? (
           <button className="btn btn--stop" onClick={() => void handleEnd()}>
             <StopIcon />
             <span>End Interview</span>

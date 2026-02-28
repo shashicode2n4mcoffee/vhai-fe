@@ -35,13 +35,10 @@ export function FullFlowReportPage() {
     setSession(getFullFlowReport());
   }, []);
 
-  // Redirect if no session or coding not completed (last step)
+  // Redirect if no session
   useEffect(() => {
     if (session === null) return;
-    if (!session.coding) {
-      navigate("/dashboard", { replace: true });
-    }
-  }, [session, navigate]);
+  }, [session]);
 
   const handleBackToDashboard = () => {
     clearFullFlowReport();
@@ -57,10 +54,6 @@ export function FullFlowReportPage() {
         </div>
       </div>
     );
-  }
-
-  if (!session.coding) {
-    return null; // redirecting
   }
 
   return (
@@ -94,7 +87,11 @@ export function FullFlowReportPage() {
             {session.interview && (
               <InterviewSection result={session.interview} />
             )}
-            <CodingSection result={session.coding} />
+            {session.coding ? (
+              <CodingSection result={session.coding} />
+            ) : (
+              <CodingSectionSkipped />
+            )}
           </div>
 
           <div className="apt-actions" style={{ marginTop: 32 }}>
@@ -222,6 +219,24 @@ function InterviewSection({ result }: { result: FullFlowInterviewResult }) {
           )}
         </div>
       )}
+    </section>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Coding section (skipped for MBA/Management track)
+// ---------------------------------------------------------------------------
+function CodingSectionSkipped() {
+  return (
+    <section className="report-card full-flow-report__card">
+      <div className="eval-section__header">
+        <span className="eval-section__num">3</span>
+        <h2 className="report-card__title">Coding Challenge</h2>
+        <span className="eval-rec-badge eval-rec-badge--neutral">Not applicable</span>
+      </div>
+      <p className="full-flow-report__subsection" style={{ marginTop: 8, opacity: 0.9 }}>
+        Skipped for this track (MBA/Management). Coding is not part of the assessment.
+      </p>
     </section>
   );
 }

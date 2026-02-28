@@ -266,7 +266,7 @@ export function AptitudeTest() {
             riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
           },
         }).catch(() => {}).finally(() => {
-          navigate("/interview/professional/new", { state: { fromFullFlow: true } });
+          navigate("/interview/new", { state: { fromFullFlow: true } });
         });
       } else {
         navigate("/interview/new", { state: { fromFullFlow: true } });
@@ -325,14 +325,14 @@ export function AptitudeTest() {
     };
   }, [webcamStream]);
 
-  // Start proctoring when stream is ready and hook is ready
+  // Start proctoring when stream is ready and hook is ready (omit proctoring.isRunning from deps to avoid loop: stop() -> setState -> effect re-run -> cleanup stop())
   useEffect(() => {
     if (phase !== "quiz" || !webcamStream || !proctoring.isReady || proctoring.isRunning) return;
     proctoring.start();
     return () => {
       proctoring.stop();
     };
-  }, [phase, webcamStream, proctoring.isReady, proctoring.isRunning]);
+  }, [phase, webcamStream, proctoring.isReady]);
 
   // Malpractice listeners: tab switch, window switch, fullscreen exit (quiz phase)
   useEffect(() => {
