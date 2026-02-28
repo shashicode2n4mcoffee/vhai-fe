@@ -32,7 +32,7 @@ const interviewsApi = api.injectEndpoints({
   endpoints: (builder) => ({
     createInterview: builder.mutation<
       any,
-      { templateId: string; interviewType?: "TECHNICAL" | "HR" | "BEHAVIORAL" | "GENERAL" }
+      { templateId: string; interviewType?: "TECHNICAL" | "HR" | "BEHAVIORAL" | "GENERAL"; fromFullFlow?: boolean }
     >({
       query: (body) => ({ url: "/interviews", method: "POST", body }),
       invalidatesTags: ["Interview", "Credits"],

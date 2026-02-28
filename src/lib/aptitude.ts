@@ -52,16 +52,20 @@ export async function generateQuiz(
   topic: string,
   count: number,
   difficulty: "Easy" | "Medium" | "Hard" | "Mixed",
+  distributionOverride?: string,
 ): Promise<AptitudeQuiz> {
   const { getGeminiConfig } = await import("./gemini-key");
   const geminiConfig = await getGeminiConfig();
   const apiKey = geminiConfig.apiKey;
   const model = geminiConfig.reportModel;
 
+  const distributionText =
+    distributionOverride ?? (difficulty === "Mixed" ? "8 Easy, 8 Medium, 4 Hard" : `All ${difficulty}`);
+
   const prompt = `Generate exactly ${count} multiple-choice aptitude test questions.
 
 Topic: ${topic}
-Difficulty distribution: ${difficulty === "Mixed" ? "8 Easy, 8 Medium, 4 Hard" : `All ${difficulty}`}
+Difficulty distribution: ${distributionText}
 
 If the topic mentions R.S. Aggarwal or Quantitative Aptitude, pick questions from these chapters:
 Number System, HCF-LCM, Simplification, Surds & Indices, Percentages, Profit & Loss, Simple & Compound Interest, Ratio & Proportion, Partnership, Averages, Problems on Ages, Time & Work, Pipes & Cisterns, Time Speed & Distance, Boats & Streams, Mixture & Alligation, Algebra, Linear & Quadratic Equations, Inequalities, AP & GP, Geometry, Mensuration, Trigonometry, Heights & Distances, Data Interpretation, Data Sufficiency, Statistics, Permutations & Combinations, Probability, Set Theory, Logarithms, Functions, Matrices, Complex Numbers.

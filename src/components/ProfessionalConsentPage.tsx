@@ -5,7 +5,7 @@
  */
 
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { useGetLiveKitConfigQuery, useGetLiveKitTokenMutation } from "../store/endpoints/livekit";
 import { Navigate } from "react-router-dom";
 import { useAppSelector } from "../store/hooks";
@@ -13,6 +13,7 @@ import { selectTemplate, selectInterviewId } from "../store/interviewSlice";
 
 export function ProfessionalConsentPage() {
   const navigate = useNavigate();
+  const location = useLocation();
   const template = useAppSelector(selectTemplate);
   const interviewId = useAppSelector(selectInterviewId);
   const { data: config } = useGetLiveKitConfigQuery();
@@ -51,7 +52,7 @@ export function ProfessionalConsentPage() {
         participantName: "Candidate",
       }).unwrap();
       navigate("/interview/professional/session", {
-        state: { token, url, roomName, dataSaver, agentDispatched: agentDispatched === true },
+        state: { ...location.state, token, url, roomName, dataSaver, agentDispatched: agentDispatched === true },
       });
     } catch (e) {
       const msg =

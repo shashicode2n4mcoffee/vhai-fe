@@ -4,13 +4,13 @@
  * Phases:
  *   1. Setup      — Choose topic, language, difficulty
  *   2. Loading    — AI generates the coding problem
- *   3. Editor     — Solve the problem (Monaco + problem panel + timer)
+ *   3. Editor     — Solve the problem (Monaco + problem panel + timer, proctored)
  *   4. Evaluating — AI reviews submitted code
  *   5. Results    — Detailed skill rating with category breakdown
  */
 
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import Editor from "@monaco-editor/react";
 import {
   generateCodingProblem,
@@ -26,6 +26,9 @@ import { useToast } from "./Toast";
 import { logErrorToServer } from "../lib/logError";
 import { useCreateCodingMutation, useUpdateCodingMutation } from "../store/endpoints/coding";
 import { BoltIcon } from "./AppLogo";
+import { useProctoring } from "../proctoring/useProctoring";
+import { MalpracticeOverlay, type MalpracticeKind } from "./MalpracticeOverlay";
+import { saveFullFlowCoding } from "../lib/fullFlowStorage";
 
 type Phase = "setup" | "loading" | "editor" | "evaluating" | "results";
 
@@ -33,6 +36,9 @@ const LANGUAGES = Object.entries(LANGUAGE_CONFIG) as [CodingLanguage, (typeof LA
 
 export function CodingTest() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromFullFlow = (location.state as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+  const templateNameFromFlow = (location.state as { templateName?: string } | null)?.templateName;
   const toast = useToast();
   const [createCoding] = useCreateCodingMutation();
   const [updateCoding] = useUpdateCodingMutation();
@@ -46,6 +52,7 @@ export function CodingTest() {
   const [phase, setPhase] = useState<Phase>("setup");
   const [problem, setProblem] = useState<CodingProblem | null>(null);
   const [codingId, setCodingId] = useState<string | null>(null);
+  const [submissionCount, setSubmissionCount] = useState(0); // Max 3 (proctoring)
   const [code, setCode] = useState("");
   const [evaluation, setEvaluation] = useState<CodeEvaluation | null>(null);
   const [error, setError] = useState("");
@@ -56,6 +63,31 @@ export function CodingTest() {
   const [elapsed, setElapsed] = useState(0);
   const startTimeRef = useRef(0);
   const timerRef = useRef(0);
+
+  // Proctoring (editor phase): webcam + tab/window/fullscreen
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [pendingMalpractice, setPendingMalpractice] = useState<MalpracticeKind | null>(null);
+  const editorStartTsRef = useRef(0);
+  const proctoring = useProctoring({
+    enabled: phase === "editor" && !!webcamStream,
+    videoRef,
+    interviewStartTs: editorStartTsRef.current,
+    fps: 3,
+  });
+  const requestFullscreen = useCallback(async () => {
+    try {
+      const el = document.documentElement;
+      if (document.fullscreenElement) return true;
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+        return !!document.fullscreenElement;
+      }
+    } catch {
+      /* user denied or not supported */
+    }
+    return false;
+  }, []);
 
   // Start timer
   const startTimer = useCallback(() => {
@@ -75,6 +107,76 @@ export function CodingTest() {
 
   // Cleanup timer on unmount
   useEffect(() => () => stopTimer(), [stopTimer]);
+
+  // Request webcam when entering editor phase (for proctoring)
+  useEffect(() => {
+    if (phase !== "editor") return;
+    let stream: MediaStream | null = null;
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: false })
+      .then((s) => {
+        stream = s;
+        setWebcamStream(s);
+      })
+      .catch(() => setWebcamStream(null));
+    return () => {
+      if (stream) stream.getTracks().forEach((t) => t.stop());
+      setWebcamStream(null);
+    };
+  }, [phase]);
+
+  // Attach webcam stream to video element for proctoring
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el && webcamStream) el.srcObject = webcamStream;
+    return () => {
+      if (el) el.srcObject = null;
+    };
+  }, [webcamStream]);
+
+  // Start proctoring when stream is ready and hook is ready (editor phase)
+  useEffect(() => {
+    if (phase !== "editor" || !webcamStream || !proctoring.isReady || proctoring.isRunning) return;
+    proctoring.start();
+    return () => proctoring.stop();
+  }, [phase, webcamStream, proctoring.isReady, proctoring.isRunning]);
+
+  // Malpractice listeners: tab switch, window switch, fullscreen exit (editor phase)
+  useEffect(() => {
+    if (phase !== "editor") return;
+    const tabWasHiddenRef = { current: false };
+    const windowHadBlurRef = { current: false };
+    const onVisibilityChange = () => {
+      if (document.hidden) tabWasHiddenRef.current = true;
+      else if (tabWasHiddenRef.current) {
+        tabWasHiddenRef.current = false;
+        setPendingMalpractice("tab_switch");
+      }
+    };
+    const onBlur = () => {
+      windowHadBlurRef.current = true;
+    };
+    const onFocus = () => {
+      if (windowHadBlurRef.current) {
+        windowHadBlurRef.current = false;
+        setPendingMalpractice("window_switch");
+      }
+    };
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) setPendingMalpractice("fullscreen_exit");
+      else setPendingMalpractice((prev) => (prev === "fullscreen_exit" ? null : prev));
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, [phase]);
 
   // ---- Generate problem ----
   const handleGenerate = async () => {
@@ -101,7 +203,9 @@ export function CodingTest() {
         },
       }).unwrap();
       setCodingId(created.id);
+      setSubmissionCount((created as { submissionCount?: number }).submissionCount ?? 0);
 
+      editorStartTsRef.current = Date.now();
       setPhase("editor");
       startTimer();
       toast.update(tid, "success", `"${p.title}" ready — good luck!`);
@@ -126,6 +230,10 @@ export function CodingTest() {
   const handleSubmit = async () => {
     if (!problem || !code.trim()) return;
     stopTimer();
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+
     const timeSpent = elapsed;
     setPhase("evaluating");
     const tid = toast.loading("AI is reviewing your code...");
@@ -134,16 +242,29 @@ export function CodingTest() {
       setEvaluation(ev);
       setPhase("results");
 
+      if (fromFullFlow) {
+        saveFullFlowCoding({
+          score: ev.overallScore,
+          verdict: ev.verdict,
+          problemTitle: problem.title,
+          language,
+          difficulty: problem.difficulty,
+          timeSpentSec: timeSpent,
+          codingId: codingId ?? undefined,
+          evaluation: ev,
+        });
+      }
+
       if (ev.overallScore >= 75) {
         toast.update(tid, "success", `${ev.verdict}! Score: ${ev.overallScore}/100`);
       } else {
         toast.update(tid, "info", `${ev.verdict} — Score: ${ev.overallScore}/100`);
       }
 
-      // Update backend
+      // Update backend (including proctoring data); backend enforces max 3 submissions
       if (codingId) {
         try {
-          await updateCoding({
+          const updated = await updateCoding({
             id: codingId,
             data: {
               userCode: code,
@@ -151,8 +272,11 @@ export function CodingTest() {
               score: ev.overallScore,
               verdict: ev.verdict,
               timeSpent,
+              proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+              riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
             },
           }).unwrap();
+          setSubmissionCount((updated as { submissionCount?: number }).submissionCount ?? submissionCount + 1);
         } catch (saveErr) {
           const saveMsg = saveErr && typeof saveErr === "object" && "data" in saveErr && (saveErr as { data?: { error?: string } }).data?.error
             ? (saveErr as { data: { error: string } }).data.error
@@ -170,16 +294,24 @@ export function CodingTest() {
     }
   };
 
-  // ---- Retake ----
+  // ---- Retake (discard) ----
   const handleRetake = () => {
     stopTimer();
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+    setPendingMalpractice(null);
     setProblem(null);
     setCodingId(null);
+    setSubmissionCount(0);
     setCode("");
     setEvaluation(null);
     setElapsed(0);
     setPhase("setup");
   };
+
+  const maxSubmissions = 3;
+  const canSubmitAgain = submissionCount < maxSubmissions;
 
   // ===========================================================================
   // SETUP PHASE
@@ -204,8 +336,11 @@ export function CodingTest() {
           <div className="dash__welcome">
             <h1 className="dash__welcome-title">Coding Challenge</h1>
             <p className="dash__welcome-sub">
-              Get an AI-generated coding problem, solve it in a professional editor,
-              and receive a detailed skill evaluation.
+              {templateNameFromFlow ? (
+                <>Final step of the full interview flow (template: {templateNameFromFlow}). Get an AI-generated coding problem, solve it, and receive a detailed skill evaluation.</>
+              ) : (
+                <>Get an AI-generated coding problem, solve it in a professional editor, and receive a detailed skill evaluation.</>
+              )}
             </p>
           </div>
           <div className="code-setup">
@@ -306,6 +441,19 @@ export function CodingTest() {
   if (phase === "editor" && problem) {
     return (
       <div className="dash code-page--editor">
+        {/* Proctoring: hidden video for face detection; overlay on malpractice */}
+        <video ref={videoRef} autoPlay playsInline muted className="code-proctoring-video" aria-hidden />
+        {pendingMalpractice && (
+          <MalpracticeOverlay
+            kind={pendingMalpractice}
+            onAcknowledge={() => {
+              if (pendingMalpractice === "fullscreen_exit" && !document.fullscreenElement) return;
+              setPendingMalpractice(null);
+            }}
+            onRequestFullscreen={requestFullscreen}
+            isFullscreen={!!document.fullscreenElement}
+          />
+        )}
         <header className="dash__topbar">
           <button type="button" className="dash__brand" onClick={() => navigate("/dashboard")} title="Dashboard">
             <div className="dash__brand-icon">
@@ -321,6 +469,9 @@ export function CodingTest() {
             <span className="code-topbar__lang">{LANGUAGE_CONFIG[language].label}</span>
           </div>
           <div className="code-topbar__right">
+            <span className="code-topbar__submissions" title="Max 3 submissions allowed">
+              Submissions: {submissionCount}/{maxSubmissions}
+            </span>
             <span className="code-topbar__timer">
               <TimerIcon />
               {formatTime(elapsed)}
@@ -330,8 +481,9 @@ export function CodingTest() {
             </button>
             <button
               className="btn btn--primary code-topbar__submit"
-              disabled={!code.trim() || code === problem.starterCode}
+              disabled={!code.trim() || code === problem.starterCode || submissionCount >= maxSubmissions}
               onClick={() => void handleSubmit()}
+              title={submissionCount >= maxSubmissions ? "Max 3 submissions used" : undefined}
             >
               Submit Solution
             </button>
@@ -451,13 +603,22 @@ export function CodingTest() {
 
           {/* Editor + Terminal vertical split */}
           <div className="code-editor-area">
-            <div className="code-editor">
+            <div className="code-editor" title="Copy and paste are disabled during the assessment.">
               <Editor
                 height="100%"
                 language={LANGUAGE_CONFIG[language].monacoId}
                 theme="vs-dark"
                 value={code}
                 onChange={(val) => setCode(val ?? "")}
+                onMount={(editor, monaco) => {
+                  // Proctoring: disable copy and paste in coding round
+                  monaco.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyV, () => {});
+                  monaco.editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyC, () => {});
+                  monaco.editor.addCommand(monaco.KeyMod.Shift | monaco.KeyCode.Insert, () => {}); // Shift+Insert paste
+                  editor.onDidPaste(() => {
+                    editor.trigger("keyboard", "undo", null);
+                  });
+                }}
                 options={{
                   fontSize: 14,
                   fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'Consolas', monospace",
@@ -466,7 +627,7 @@ export function CodingTest() {
                   scrollBeyondLastLine: false,
                   wordWrap: "on",
                   tabSize: 2,
-                  formatOnPaste: true,
+                  formatOnPaste: false,
                   automaticLayout: true,
                   padding: { top: 16, bottom: 16 },
                   lineNumbers: "on",
@@ -477,6 +638,7 @@ export function CodingTest() {
                   smoothScrolling: true,
                   cursorBlinking: "smooth",
                   cursorSmoothCaretAnimation: "on",
+                  contextmenu: false,
                 }}
               />
             </div>
@@ -541,6 +703,20 @@ export function CodingTest() {
         </header>
         <div className="dash__content">
         <div className="code-results-wrap">
+          {/* Submissions used (max 3) */}
+          <p className="code-results-submissions">
+            Submissions used: {submissionCount}/{maxSubmissions}
+            {canSubmitAgain && (
+              <button
+                type="button"
+                className="btn btn--secondary btn--sm"
+                style={{ marginLeft: 12 }}
+                onClick={() => setPhase("editor")}
+              >
+                Submit again
+              </button>
+            )}
+          </p>
           {/* Score hero */}
           <div className="code-result-hero">
             <div className="code-result-ring">
@@ -641,9 +817,15 @@ export function CodingTest() {
             <button type="button" className="dash__topbar-btn" onClick={() => navigate("/dashboard")}>
               ← Dashboard
             </button>
-            <button className="btn btn--primary" onClick={handleRetake}>
-              Try Another Challenge
-            </button>
+            {fromFullFlow ? (
+              <button className="btn btn--primary" onClick={() => navigate("/interview/full/report")}>
+                View final report
+              </button>
+            ) : (
+              <button className="btn btn--primary" onClick={handleRetake}>
+                Try Another Challenge
+              </button>
+            )}
           </div>
         </div>
         </div>

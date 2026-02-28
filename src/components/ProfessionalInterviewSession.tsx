@@ -69,6 +69,7 @@ interface SessionState {
 
 function ProfessionalSessionInner({ agentDispatched: agentDispatchedFromState }: { agentDispatched?: boolean }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
   const room = useEnsureRoom();
   const lkConnectionState = useConnectionState();
@@ -224,8 +225,8 @@ function ProfessionalSessionInner({ agentDispatched: agentDispatchedFromState }:
         networkQuality: worstQualityRef.current,
       }),
     );
-    navigate("/interview/report");
-  }, [template, state.transcript, state.pendingUserText, state.pendingAssistantText, actions, dispatch, navigate, useLiveKitAgent]);
+    navigate("/interview/report", { state: location.state });
+  }, [template, state.transcript, state.pendingUserText, state.pendingAssistantText, actions, dispatch, navigate, useLiveKitAgent, location.state]);
 
   handleEndRef.current = handleEnd;
 

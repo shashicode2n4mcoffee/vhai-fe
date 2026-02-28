@@ -6,7 +6,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import type { ConversationTemplate, TranscriptEntry } from "../types/gemini";
 import {
   generateReport,
@@ -23,12 +23,14 @@ import {
   selectVideoUrl,
   selectInterviewId,
   selectNetworkQuality,
+  selectSelectedTemplateNameForFullFlow,
   resetInterview,
   setTemplate,
   setInterviewResult,
 } from "../store/interviewSlice";
 import { getTranscriptBackup, clearTranscriptBackup } from "../lib/transcriptBackup";
 import { reportToPdf } from "../lib/reportToPdf";
+import { saveFullFlowInterview } from "../lib/fullFlowStorage";
 
 type Status = "loading" | "done" | "error";
 
@@ -44,6 +46,9 @@ export function ConversationReport() {
   const networkQuality = useAppSelector(selectNetworkQuality);
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromFullFlow = (location.state as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+  const templateNameForFullFlow = useAppSelector(selectSelectedTemplateNameForFullFlow);
   const [hasCheckedBackup, setHasCheckedBackup] = useState(false);
 
   // Restore transcript from localStorage backup if Redux is empty (e.g. refresh, report failed earlier)
@@ -100,11 +105,22 @@ export function ConversationReport() {
       videoUrl={videoUrl}
       interviewId={interviewId}
       networkQuality={networkQuality}
+      fromFullFlow={fromFullFlow}
       onReportGenerated={() => clearTranscriptBackup()}
       onBackToDashboard={() => {
         if (videoUrl) URL.revokeObjectURL(videoUrl);
         dispatch(resetInterview());
         navigate("/dashboard");
+      }}
+      onContinueToCoding={(transcriptToSave, reportToSave) => {
+        saveFullFlowInterview({
+          transcript: transcriptToSave,
+          report: reportToSave ?? null,
+          interviewId,
+        });
+        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        dispatch(resetInterview());
+        navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined } });
       }}
     />
   );
@@ -117,16 +133,20 @@ function ReportInner({
   videoUrl,
   interviewId,
   networkQuality,
+  fromFullFlow,
   onReportGenerated,
   onBackToDashboard,
+  onContinueToCoding,
 }: {
   template: ConversationTemplate;
   transcript: TranscriptEntry[];
   videoUrl: string | null;
   interviewId: string | null;
   networkQuality: "stable" | "moderate" | "poor" | null;
+  fromFullFlow?: boolean;
   onReportGenerated: () => void;
   onBackToDashboard: () => void;
+  onContinueToCoding?: (transcript: TranscriptEntry[], report: EvaluationReport | null) => void;
 }) {
   const navigate = useNavigate();
   const [updateInterview] = useUpdateInterviewMutation();
@@ -137,6 +157,7 @@ function ReportInner({
   const toast = useToast();
   const toastRef = useRef(toast);
   const reportWrapperRef = useRef<HTMLDivElement>(null);
+  const fullFlowRedirectDoneRef = useRef(false);
   toastRef.current = toast;
 
   const handleDownloadPdf = useCallback(async () => {
@@ -206,6 +227,14 @@ function ReportInner({
           setStatus("done");
           toastRef.current.update(tid, "success", "Report generated successfully!");
           onReportGenerated();
+          // Persist transcript + report to localStorage for full flow (so final report can show it)
+          if (fromFullFlow) {
+            saveFullFlowInterview({
+              transcript,
+              report: result,
+              interviewId,
+            });
+          }
         }
       } catch (err) {
         if (!cancelled) {
@@ -245,7 +274,7 @@ function ReportInner({
       cancelled = true;
       toastRef.current.dismiss(tid);
     };
-  }, [transcript, template, interviewId, onReportGenerated]);
+  }, [transcript, template, interviewId, onReportGenerated, fromFullFlow]);
 
   // Computed scoring (memoized so it doesn't recompute on every render)
   const scoring = useMemo(
@@ -315,6 +344,16 @@ function ReportInner({
     }
   }, [report, scoring, interviewId, transcript]);
 
+  // Full flow: after report is done, redirect to coding (no report UI; full report after coding)
+  useEffect(() => {
+    if (!fromFullFlow || status !== "done" || !report || !onContinueToCoding || fullFlowRedirectDoneRef.current) return;
+    fullFlowRedirectDoneRef.current = true;
+    const t = setTimeout(() => {
+      onContinueToCoding(transcript, report);
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [fromFullFlow, status, report, onContinueToCoding, transcript]);
+
   // ---- Loading ----
   if (status === "loading") {
     return (
@@ -344,6 +383,11 @@ function ReportInner({
             <button type="button" className="btn btn--primary" onClick={handleRegenerateFromStorage}>
               Regenerate from saved data
             </button>
+            {fromFullFlow && onContinueToCoding && (
+              <button type="button" className="btn btn--secondary" onClick={() => onContinueToCoding(transcript, report)}>
+                Continue to Coding
+              </button>
+            )}
             <button type="button" className="btn btn--secondary" onClick={onBackToDashboard}>
               Back to Dashboard
             </button>
@@ -354,6 +398,21 @@ function ReportInner({
   }
 
   if (!report || !scoring) return null;
+
+  // Full flow: show "Continuing to coding" instead of full report (redirect triggered in useEffect above)
+  if (fromFullFlow && status === "done") {
+    return (
+      <div className="report-page">
+        <div className="report-loading">
+          <div className="report-loading__spinner" />
+          <h2 className="report-loading__title">Report saved</h2>
+          <p className="report-loading__subtitle">
+            You&apos;ll see the full report after the coding challenge. Continuing to coding…
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   // ---- Next steps (Section 17) ----
   const nextSteps = getNextSteps(scoring.recommendation);
@@ -865,6 +924,11 @@ function ReportInner({
           >
             {downloadingPdf ? "Generating PDF…" : <><IconPdf /> Download PDF</>}
           </button>
+          {fromFullFlow && onContinueToCoding && (
+            <button type="button" className="btn btn--start" onClick={() => onContinueToCoding(transcript, report)}>
+              Continue to Coding →
+            </button>
+          )}
           <button className="btn btn--start" onClick={onBackToDashboard}>
             <IconBack /> Back to Dashboard
           </button>

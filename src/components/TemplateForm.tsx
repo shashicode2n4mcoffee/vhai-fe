@@ -11,11 +11,17 @@
  * On submit: creates template + interview via API, stores in Redux, navigates to VoiceChat.
  */
 
-import { useState, useMemo } from "react";
-import { useNavigate } from "react-router-dom";
+import { useState, useMemo, useEffect } from "react";
+import { useNavigate, useLocation } from "react-router-dom";
 import type { ConversationTemplate } from "../types/gemini";
-import { useAppDispatch } from "../store/hooks";
-import { setTemplate as storeTemplate, setInterviewId, setGuardrails } from "../store/interviewSlice";
+import { useAppDispatch, useAppSelector } from "../store/hooks";
+import {
+  setTemplate as storeTemplate,
+  setInterviewId,
+  setGuardrails,
+  selectTemplate as selectTemplateFromRedux,
+  selectSelectedTemplateIdForFullFlow,
+} from "../store/interviewSlice";
 import { useCreateTemplateMutation } from "../store/endpoints/templates";
 import { useCreateInterviewMutation } from "../store/endpoints/interviews";
 import { useListTemplatesQuery } from "../store/endpoints/templates";
@@ -59,7 +65,12 @@ export interface TemplateFormProps {
 
 export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const dispatch = useAppDispatch();
+  const reduxTemplate = useAppSelector(selectTemplateFromRedux);
+  const selectedTemplateIdForFullFlow = useAppSelector(selectSelectedTemplateIdForFullFlow);
+  const fromFullFlow = (location.state as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+
   const [createTemplate] = useCreateTemplateMutation();
   const [createInterview] = useCreateInterviewMutation();
 
@@ -78,6 +89,14 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [interviewType, setInterviewType] = useState<"TECHNICAL" | "HR" | "BEHAVIORAL" | "GENERAL">("GENERAL");
+
+  // Full flow: template already selected; show edit step with Redux template (native or professional)
+  useEffect(() => {
+    if (!fromFullFlow || !reduxTemplate || !selectedTemplateIdForFullFlow) return;
+    setStep("edit");
+    setTemplate(reduxTemplate);
+    setSelectedTemplateId(selectedTemplateIdForFullFlow);
+  }, [fromFullFlow, reduxTemplate, selectedTemplateIdForFullFlow]);
 
   // Group templates by category
   const groupedTemplates = useMemo(() => {
@@ -126,23 +145,30 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
     setError("");
     setIsSubmitting(true);
     try {
-      const createdTemplate = await createTemplate({
-        name: `Interview ${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
-        aiBehavior: template.aiBehavior,
-        customerWants: template.customerWants,
-        candidateOffers: template.candidateOffers,
-      }).unwrap();
+      let templateId: string;
+      if (fromFullFlow && selectedTemplateIdForFullFlow) {
+        templateId = selectedTemplateIdForFullFlow;
+      } else {
+        const createdTemplate = await createTemplate({
+          name: `Interview ${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+          aiBehavior: template.aiBehavior,
+          customerWants: template.customerWants,
+          candidateOffers: template.candidateOffers,
+        }).unwrap();
+        templateId = createdTemplate.id;
+      }
       const interview = await createInterview({
-        templateId: createdTemplate.id,
+        templateId,
         interviewType,
+        fromFullFlow: fromFullFlow || undefined,
       }).unwrap();
       dispatch(storeTemplate(template));
       dispatch(setInterviewId(interview.id));
       dispatch(setGuardrails(interview.guardrails ?? null));
       if (variant === "professional") {
-        navigate("/interview/professional/consent");
+        navigate("/interview/professional/consent", { state: location.state });
       } else {
-        navigate("/interview/session");
+        navigate("/interview/session", { state: location.state });
       }
     } catch (err: unknown) {
       const anyErr = err as { status?: number; data?: { error?: string; upgradeUrl?: string } };
@@ -170,8 +196,12 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
           <span className="dash__brand-name">VocalHireAI</span>
         </button>
         <div className="dash__user-section">
-          <button type="button" className="dash__topbar-btn" onClick={() => step === "edit" ? setStep("pick") : navigate(variant === "professional" ? "/interview/professional" : "/dashboard")}>
-            {step === "edit" ? "← Back to Templates" : variant === "professional" ? "← Professional Interview" : "← Dashboard"}
+          <button type="button" className="dash__topbar-btn" onClick={() => {
+            if (step === "edit" && fromFullFlow) navigate("/dashboard");
+            else if (step === "edit") setStep("pick");
+            else navigate(variant === "professional" ? "/interview/professional" : "/dashboard");
+          }}>
+            {step === "edit" && fromFullFlow ? "← Dashboard" : step === "edit" ? "← Back to Templates" : variant === "professional" ? "← Professional Interview" : "← Dashboard"}
           </button>
         </div>
       </header>

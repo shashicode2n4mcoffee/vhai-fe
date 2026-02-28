@@ -5,7 +5,8 @@
  * a new interview, and a history table of past interviews.
  */
 
-import { Link, useNavigate } from "react-router-dom";
+import { useEffect } from "react";
+import { Link, useNavigate, useLocation } from "react-router-dom";
 import { LANGUAGE_CONFIG } from "../lib/coding-test";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
 import { clearUser, selectUser } from "../store/authSlice";
@@ -15,11 +16,13 @@ import { useGetDashboardQuery } from "../store/endpoints/analytics";
 import { useGetCreditsBalanceQuery } from "../store/endpoints/credits";
 import { useGetLiveKitConfigQuery } from "../store/endpoints/livekit";
 import { BoltIcon } from "./AppLogo";
+import { useToast } from "./Toast";
 
 export function Dashboard() {
   const user = useAppSelector(selectUser)!;
   const dispatch = useAppDispatch();
   const navigate = useNavigate();
+  const location = useLocation();
   const { data: dashData, isLoading } = useGetDashboardQuery();
   const { data: credits } = useGetCreditsBalanceQuery();
   const { data: livekitConfig } = useGetLiveKitConfigQuery();
@@ -35,6 +38,16 @@ export function Dashboard() {
   const canStartInterview = isManager || hasInterviewCredits;
   const canStartAptitude = isManager || hasAptitudeCredits;
   const canStartCoding = isManager || hasCodingCredits;
+  const canStartFullFlow = isManager || (hasInterviewCredits && hasAptitudeCredits && hasCodingCredits);
+  const toast = useToast();
+
+  useEffect(() => {
+    const state = location.state as { fullFlowComplete?: boolean } | null;
+    if (state?.fullFlowComplete) {
+      toast.success("You've completed the full interview flow!");
+      navigate("/dashboard", { replace: true, state: {} });
+    }
+  }, [location.state, navigate, toast]);
 
   const handleLogout = () => {
     clearTokens();
@@ -178,6 +191,30 @@ export function Dashboard() {
               <span className="dash__stat-label">Avg. Coding</span>
             </div>
           </div>
+        </div>
+
+        {/* Full Interview Flow: Aptitude → Video → Coding (all three in sequence) */}
+        <div
+          className={`dash__cta dash__cta--full ${!canStartFullFlow ? "dash__cta--locked" : ""}`}
+          onClick={() => (canStartFullFlow ? navigate("/interview/full") : navigate("/billing"))}
+        >
+          <div className="dash__cta-left">
+            <div className="dash__cta-icon dash__cta-icon--full">
+              <FlowIcon />
+            </div>
+            <div>
+              <h3 className="dash__cta-title">Full Interview Flow</h3>
+              <p className="dash__cta-desc">
+                {canStartFullFlow
+                  ? "Complete all three stages: Aptitude (20 min) → AI Video Interview (20 min) → Coding (20 min, max 3 submissions). All proctored."
+                  : "You need Interview, Aptitude, and Coding credits to start the full flow. Get credits to unlock."}
+              </p>
+            </div>
+          </div>
+          <button className="btn btn--start dash__cta-btn" type="button">
+            {canStartFullFlow ? "Start full flow" : "Get credits"}
+            <ArrowIcon />
+          </button>
         </div>
 
         {/* CTA — gated: no credits = go to billing */}
@@ -522,6 +559,22 @@ function VideoCameraIcon() {
     <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5" />
       <rect x="2" y="6" width="14" height="12" rx="2" />
+    </svg>
+  );
+}
+
+function FlowIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M12 2v4" />
+      <path d="M12 18v4" />
+      <path d="M4.93 4.93l2.83 2.83" />
+      <path d="M16.24 16.24l2.83 2.83" />
+      <path d="M2 12h4" />
+      <path d="M18 12h4" />
+      <path d="M4.93 19.07l2.83-2.83" />
+      <path d="M16.24 7.76l2.83-2.83" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
   );
 }

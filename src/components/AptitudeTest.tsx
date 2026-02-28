@@ -2,14 +2,14 @@
  * AptitudeTest — Full aptitude test flow in a single component.
  *
  * Phases:
- *  1. Setup   — User enters topic, selects difficulty & question count
+ *  1. Start   — Fixed R.S. Aggarwal, 16 questions (8 Easy + 4 Medium + 4 Hard); user clicks Start test
  *  2. Loading — Generating questions via single API call
- *  3. Quiz    — User answers MCQs
+ *  3. Quiz    — User answers MCQs (with proctoring: webcam, tab/window/fullscreen)
  *  4. Results — Client-side scored results with explanations
  */
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import {
   generateQuiz,
   evaluateQuiz,
@@ -18,14 +18,20 @@ import {
 } from "../lib/aptitude";
 import { useToast } from "./Toast";
 import { useCreateAptitudeMutation, useUpdateAptitudeMutation } from "../store/endpoints/aptitude";
+import { useAppSelector } from "../store/hooks";
+import { selectSelectedTemplateNameForFullFlow } from "../store/interviewSlice";
 import { BoltIcon } from "./AppLogo";
 import { logErrorToServer } from "../lib/logError";
+import { saveFullFlowAptitude } from "../lib/fullFlowStorage";
+import { useProctoring } from "../proctoring/useProctoring";
+import { MalpracticeOverlay, type MalpracticeKind } from "./MalpracticeOverlay";
 
-type Phase = "setup" | "loading" | "quiz" | "results";
-type Difficulty = "Easy" | "Medium" | "Hard" | "Mixed";
+type Phase = "start" | "loading" | "quiz" | "results" | "redirecting";
 
 const RS_AGGARWAL_TOPIC = "R.S. Aggarwal Quantitative Aptitude (Number System, HCF-LCM, Simplification, Surds, Percentages, Profit & Loss, SI-CI, Ratio, Partnership, Averages, Ages, Time & Work, Pipes, Time Speed Distance, Boats, Mixture & Alligation, Algebra, Linear/Quadratic Equations, Inequalities, AP-GP, Geometry, Mensuration, Trigonometry, Heights & Distances, Data Interpretation, Data Sufficiency, Statistics, P&C, Probability, Sets, Logarithms, Functions, Matrices, Complex Numbers)";
-const QUIZ_TIME_LIMIT_MS = 25 * 60 * 1000; // 25 minutes
+const DEFAULT_QUESTION_COUNT = 16; // 8 Easy + 4 Medium + 4 Hard
+const DEFAULT_DISTRIBUTION = "8 Easy, 4 Medium, 4 Hard";
+const QUIZ_TIME_LIMIT_MS = 20 * 60 * 1000; // 20 minutes (proctored)
 
 function formatTimer(ms: number): string {
   const totalSec = Math.max(0, Math.floor(ms / 1000));
@@ -36,15 +42,14 @@ function formatTimer(ms: number): string {
 
 export function AptitudeTest() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const fromFullFlow = (location.state as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+  const templateNameForFullFlow = useAppSelector(selectSelectedTemplateNameForFullFlow);
   const [createAptitude] = useCreateAptitudeMutation();
   const [updateAptitude] = useUpdateAptitudeMutation();
-  // Setup state
-  const [topic, setTopic] = useState("");
-  const [difficulty, setDifficulty] = useState<Difficulty>("Mixed");
-  const [questionCount, setQuestionCount] = useState(20);
 
-  // Quiz state
-  const [phase, setPhase] = useState<Phase>("setup");
+  // Quiz state (topic and distribution are fixed: R.S. Aggarwal, 8 Easy + 4 Medium + 4 Hard)
+  const [phase, setPhase] = useState<Phase>("start");
   const [quiz, setQuiz] = useState<AptitudeQuiz | null>(null);
   const [aptitudeId, setAptitudeId] = useState<string | null>(null);
   const [answers, setAnswers] = useState<Record<number, number>>({});
@@ -57,31 +62,59 @@ export function AptitudeTest() {
   const quizStartRef = useRef(0);
   const autoSubmittedRef = useRef(false);
 
-  // ---- Generate quiz ----
+  // Proctoring (quiz phase): webcam + tab/window/fullscreen
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
+  const [pendingMalpractice, setPendingMalpractice] = useState<MalpracticeKind | null>(null);
+  const quizStartTsRef = useRef(0);
+  const proctoring = useProctoring({
+    enabled: phase === "quiz" && !!webcamStream,
+    videoRef,
+    interviewStartTs: quizStartTsRef.current,
+    fps: 3,
+  });
+  const requestFullscreen = useCallback(async () => {
+    try {
+      const el = document.documentElement;
+      if (document.fullscreenElement) return true;
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+        return !!document.fullscreenElement;
+      }
+    } catch {
+      /* user denied or not supported */
+    }
+    return false;
+  }, []);
+
+  // ---- Generate quiz (fixed: R.S. Aggarwal, 16 questions, 8 Easy + 4 Medium + 4 Hard) ----
   const handleGenerate = async () => {
-    if (!topic.trim()) return;
     setError("");
     setPhase("loading");
     const tid = toast.loading("Generating questions...");
     try {
-      const q = await generateQuiz(topic.trim(), questionCount, difficulty);
+      const q = await generateQuiz(
+        RS_AGGARWAL_TOPIC,
+        DEFAULT_QUESTION_COUNT,
+        "Mixed",
+        DEFAULT_DISTRIBUTION,
+      );
       setQuiz(q);
       setAnswers({});
-      // Reset timer
       quizStartRef.current = Date.now();
       autoSubmittedRef.current = false;
       setRemainingMs(QUIZ_TIME_LIMIT_MS);
 
-      // Save to backend (topic max 500 chars, difficulty: Easy | Medium | Hard | Mixed)
-      const topicForApi = topic.trim().slice(0, 500);
+      const topicForApi = RS_AGGARWAL_TOPIC.slice(0, 500);
       const created = await createAptitude({
         topic: topicForApi,
-        difficulty,
+        difficulty: "Mixed",
         quiz: q,
         total: q.questions.length,
       }).unwrap();
       setAptitudeId(created.id);
 
+      quizStartTsRef.current = Date.now();
       setPhase("quiz");
       toast.update(tid, "success", `${q.questions.length} questions ready!`);
     } catch (err: unknown) {
@@ -89,13 +122,13 @@ export function AptitudeTest() {
       if (status === 402) {
         toast.error("No aptitude credits. Purchase a plan to continue.");
         setTimeout(() => navigate("/billing"), 1500);
-        setPhase("setup");
+        setPhase("start");
         toast.update(tid, "error", "No credits");
         return;
       }
       const msg = err instanceof Error ? err.message : "Failed to generate quiz";
       setError(msg);
-      setPhase("setup");
+      setPhase("start");
       toast.update(tid, "error", msg);
       logErrorToServer(msg, { details: err instanceof Error ? err.stack : undefined, source: "aptitude" });
     }
@@ -109,17 +142,63 @@ export function AptitudeTest() {
   // ---- Submit & evaluate (client-side) ----
   const handleSubmit = async () => {
     if (!quiz) return;
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+
+    const timeSpentSec = quizStartRef.current
+      ? Math.round((Date.now() - quizStartRef.current) / 1000)
+      : undefined;
     const res = evaluateQuiz(quiz, answers);
     setResult(res);
-    setPhase("results");
 
+    if (fromFullFlow) {
+      saveFullFlowAptitude({
+        score: res.score,
+        total: res.total,
+        percentage: res.percentage,
+        passed: res.passed,
+        topic: RS_AGGARWAL_TOPIC.slice(0, 120),
+        timeSpentSec: timeSpentSec,
+        aptitudeId: aptitudeId ?? undefined,
+      });
+      setPhase("redirecting");
+      if (aptitudeId) {
+        try {
+          await updateAptitude({
+            id: aptitudeId,
+            data: {
+              answers: Object.fromEntries(
+                Object.entries(res.answers).map(([k, v]) => [String(k), v]),
+              ),
+              score: res.score,
+              percentage: res.percentage,
+              passed: res.passed,
+              timeSpent: timeSpentSec,
+              proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+              riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+            },
+          }).unwrap();
+        } catch (err) {
+          const msg = err && typeof err === "object" && "data" in err && (err as { data?: { error?: string } }).data?.error
+            ? (err as { data: { error: string } }).data.error
+            : err instanceof Error ? err.message : "Failed to save results";
+          toast.error(msg);
+          logErrorToServer(msg, { details: err instanceof Error ? err.stack : undefined, source: "aptitude" });
+        }
+      }
+      navigate("/interview/new", { state: { fromFullFlow: true } });
+      return;
+    }
+
+    setPhase("results");
     if (res.passed) {
       toast.success(`Passed! You scored ${res.percentage}%`);
     } else {
       toast.error(`Scored ${res.percentage}% — need 60% to pass`);
     }
 
-    // Update backend
+    // Update backend (including proctoring data)
     if (aptitudeId) {
       try {
         await updateAptitude({
@@ -131,6 +210,9 @@ export function AptitudeTest() {
             score: res.score,
             percentage: res.percentage,
             passed: res.passed,
+            timeSpent: timeSpentSec,
+            proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+            riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
           },
         }).unwrap();
       } catch (err) {
@@ -148,11 +230,51 @@ export function AptitudeTest() {
     if (!quiz || autoSubmittedRef.current) return;
     autoSubmittedRef.current = true;
     toast.error("Time's up! Your answers have been auto-submitted.");
-    // Trigger same logic as manual submit
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+
+    const timeSpentSec = quizStartRef.current
+      ? Math.round((Date.now() - quizStartRef.current) / 1000)
+      : undefined;
     const res = evaluateQuiz(quiz, answers);
     setResult(res);
-    setPhase("results");
 
+    if (fromFullFlow) {
+      saveFullFlowAptitude({
+        score: res.score,
+        total: res.total,
+        percentage: res.percentage,
+        passed: res.passed,
+        topic: RS_AGGARWAL_TOPIC.slice(0, 120),
+        timeSpentSec: timeSpentSec,
+        aptitudeId: aptitudeId ?? undefined,
+      });
+      setPhase("redirecting");
+      if (aptitudeId) {
+        updateAptitude({
+          id: aptitudeId,
+          data: {
+            answers: Object.fromEntries(
+              Object.entries(res.answers).map(([k, v]) => [String(k), v]),
+            ),
+            score: res.score,
+            percentage: res.percentage,
+            passed: res.passed,
+            timeSpent: timeSpentSec,
+            proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+            riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+          },
+        }).catch(() => {}).finally(() => {
+          navigate("/interview/professional/new", { state: { fromFullFlow: true } });
+        });
+      } else {
+        navigate("/interview/new", { state: { fromFullFlow: true } });
+      }
+      return;
+    }
+
+    setPhase("results");
     if (aptitudeId) {
       updateAptitude({
         id: aptitudeId,
@@ -163,10 +285,94 @@ export function AptitudeTest() {
           score: res.score,
           percentage: res.percentage,
           passed: res.passed,
+          timeSpent: timeSpentSec,
+          proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+          riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
         },
       }).catch(() => {});
     }
-  }, [quiz, answers, aptitudeId, toast, updateAptitude]);
+  }, [quiz, answers, aptitudeId, toast, updateAptitude, proctoring, webcamStream, fromFullFlow, navigate]);
+
+  // Request webcam when entering quiz phase (for proctoring)
+  useEffect(() => {
+    if (phase !== "quiz") return;
+    let stream: MediaStream | null = null;
+    navigator.mediaDevices
+      .getUserMedia({ video: true, audio: false })
+      .then((s) => {
+        stream = s;
+        setWebcamStream(s);
+      })
+      .catch(() => {
+        setWebcamStream(null);
+      });
+    return () => {
+      if (stream) {
+        stream.getTracks().forEach((t) => t.stop());
+      }
+      setWebcamStream(null);
+    };
+  }, [phase]);
+
+  // Attach webcam stream to video element for proctoring
+  useEffect(() => {
+    const el = videoRef.current;
+    if (el && webcamStream) {
+      el.srcObject = webcamStream;
+    }
+    return () => {
+      if (el) el.srcObject = null;
+    };
+  }, [webcamStream]);
+
+  // Start proctoring when stream is ready and hook is ready
+  useEffect(() => {
+    if (phase !== "quiz" || !webcamStream || !proctoring.isReady || proctoring.isRunning) return;
+    proctoring.start();
+    return () => {
+      proctoring.stop();
+    };
+  }, [phase, webcamStream, proctoring.isReady, proctoring.isRunning]);
+
+  // Malpractice listeners: tab switch, window switch, fullscreen exit (quiz phase)
+  useEffect(() => {
+    if (phase !== "quiz") return;
+    const tabWasHiddenRef = { current: false };
+    const windowHadBlurRef = { current: false };
+    const onVisibilityChange = () => {
+      if (document.hidden) tabWasHiddenRef.current = true;
+      else if (tabWasHiddenRef.current) {
+        tabWasHiddenRef.current = false;
+        setPendingMalpractice("tab_switch");
+      }
+    };
+    const onBlur = () => {
+      windowHadBlurRef.current = true;
+    };
+    const onFocus = () => {
+      if (windowHadBlurRef.current) {
+        windowHadBlurRef.current = false;
+        setPendingMalpractice("window_switch");
+      }
+    };
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement) {
+        setPendingMalpractice("fullscreen_exit");
+      } else {
+        setPendingMalpractice((prev) => (prev === "fullscreen_exit" ? null : prev));
+      }
+    };
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("blur", onBlur);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("blur", onBlur);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("fullscreenchange", onFullscreenChange);
+    };
+  }, [phase]);
 
   // Timer countdown during quiz phase
   useEffect(() => {
@@ -189,6 +395,10 @@ export function AptitudeTest() {
 
   // ---- Retake ----
   const handleRetake = () => {
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+    setPendingMalpractice(null);
     setQuiz(null);
     setAptitudeId(null);
     setAnswers({});
@@ -196,13 +406,13 @@ export function AptitudeTest() {
     setRemainingMs(QUIZ_TIME_LIMIT_MS);
     quizStartRef.current = 0;
     autoSubmittedRef.current = false;
-    setPhase("setup");
+    setPhase("start");
   };
 
   // ===========================================================================
-  // SETUP PHASE
+  // START PHASE — Fixed R.S. Aggarwal, 16 questions (8 Easy + 4 Medium + 4 Hard)
   // ===========================================================================
-  if (phase === "setup") {
+  if (phase === "start") {
     return (
       <div className="dash">
         <header className="dash__topbar">
@@ -222,80 +432,19 @@ export function AptitudeTest() {
           <div className="dash__welcome">
             <h1 className="dash__welcome-title">Aptitude Test</h1>
             <p className="dash__welcome-sub">
-              Enter a topic and we'll generate an MCQ quiz for you.
+              R.S. Aggarwal Quantitative Aptitude · 16 questions (8 Easy, 4 Medium, 4 Hard) · 20 minutes · Proctored
             </p>
           </div>
-          <div className="apt-setup">
-            {/* Quick preset */}
-            <div className="apt-preset-bar">
-              <button
-                className={`apt-preset-btn ${topic === RS_AGGARWAL_TOPIC ? "apt-preset-btn--active" : ""}`}
-                onClick={() => {
-                  setTopic(RS_AGGARWAL_TOPIC);
-                  setQuestionCount(20);
-                  setDifficulty("Mixed");
-                }}
-              >
-                <BookIcon /> R.S. Aggarwal — 20 Qs (8 Easy + 8 Med + 4 Hard)
-              </button>
-            </div>
-
-            <div className="apt-field">
-              <label className="apt-label">What do you want to test?</label>
-              <textarea
-                className="apt-textarea"
-                rows={3}
-                placeholder="e.g. R.S. Aggarwal Quantitative Aptitude, Data Interpretation, Geometry & Mensuration..."
-                value={topic}
-                onChange={(e) => setTopic(e.target.value)}
-              />
-            </div>
-
-            <div className="apt-row">
-              <div className="apt-field apt-field--half">
-                <label className="apt-label">Difficulty</label>
-                <div className="apt-pills">
-                  {(["Easy", "Medium", "Hard", "Mixed"] as Difficulty[]).map((d) => (
-                    <button
-                      key={d}
-                      className={`apt-pill ${difficulty === d ? "apt-pill--active" : ""}`}
-                      onClick={() => setDifficulty(d)}
-                    >
-                      {d === "Mixed" ? "Mixed (8E+8M+4H)" : d}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              <div className="apt-field apt-field--half">
-                <label className="apt-label">Questions</label>
-                <div className="apt-pills">
-                  {[5, 10, 15, 20].map((n) => (
-                    <button
-                      key={n}
-                      className={`apt-pill ${questionCount === n ? "apt-pill--active" : ""}`}
-                      onClick={() => setQuestionCount(n)}
-                    >
-                      {n}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            </div>
-
-            {/* Timer info */}
+          <div className="apt-setup apt-setup--fixed">
             <div className="apt-timer-info">
-              <ClockIcon /> You will have <strong>25 minutes</strong> to complete the quiz. Auto-submits when time runs out.
+              <ClockIcon /> You will have <strong>20 minutes</strong> to complete the quiz. This session is proctored (camera + tab/window monitoring). Auto-submits when time runs out.
             </div>
-
             {error && <div className="apt-error">{error}</div>}
-
             <button
               className="btn btn--primary apt-generate"
-              disabled={!topic.trim()}
               onClick={() => void handleGenerate()}
             >
-              Generate Quiz
+              Start test
             </button>
           </div>
         </div>
@@ -327,7 +476,7 @@ export function AptitudeTest() {
           <div className="report-loading__spinner" />
           <h2 className="apt-loading__title">Generating Questions</h2>
           <p className="apt-loading__sub">
-            Creating {questionCount} {difficulty.toLowerCase()} questions on "{topic}"...
+            Creating {DEFAULT_QUESTION_COUNT} questions (R.S. Aggarwal)...
           </p>
         </div>
         </div>
@@ -344,6 +493,19 @@ export function AptitudeTest() {
 
     return (
       <div className="dash">
+        {/* Proctoring: hidden video for face detection; overlay on malpractice */}
+        <video ref={videoRef} autoPlay playsInline muted className="apt-proctoring-video" aria-hidden />
+        {pendingMalpractice && (
+          <MalpracticeOverlay
+            kind={pendingMalpractice}
+            onAcknowledge={() => {
+              if (pendingMalpractice === "fullscreen_exit" && !document.fullscreenElement) return;
+              setPendingMalpractice(null);
+            }}
+            onRequestFullscreen={requestFullscreen}
+            isFullscreen={!!document.fullscreenElement}
+          />
+        )}
         <header className="dash__topbar">
           <button type="button" className="dash__brand" onClick={() => navigate("/dashboard")} title="Dashboard">
             <div className="dash__brand-icon">
@@ -364,7 +526,7 @@ export function AptitudeTest() {
             <div className="apt-quiz-header__left">
               <h1 className="apt-quiz-title">{quiz.title}</h1>
               <div className="apt-quiz-meta">
-                <span className="apt-quiz-badge">{difficulty === "Mixed" ? "Mixed" : difficulty}</span>
+                <span className="apt-quiz-badge">8E + 4M + 4H</span>
                 <span className="apt-quiz-progress">
                   {answeredCount}/{quiz.questions.length} answered
                 </span>
@@ -373,7 +535,7 @@ export function AptitudeTest() {
             <div className={`apt-quiz-timer ${remainingMs <= 5 * 60 * 1000 ? "apt-quiz-timer--warning" : ""} ${remainingMs <= 2 * 60 * 1000 ? "apt-quiz-timer--danger" : ""}`}>
               <ClockIcon />
               <span className="apt-quiz-timer__value">{formatTimer(remainingMs)}</span>
-              <span className="apt-quiz-timer__label">/ 25:00</span>
+              <span className="apt-quiz-timer__label">/ 20:00</span>
             </div>
           </div>
 
@@ -420,6 +582,31 @@ export function AptitudeTest() {
             </button>
           </div>
         </div>
+        </div>
+      </div>
+    );
+  }
+
+  // ===========================================================================
+  // REDIRECTING (full flow only — skip report, continue to video interview)
+  // ===========================================================================
+  if (phase === "redirecting") {
+    return (
+      <div className="dash">
+        <header className="dash__topbar">
+          <button type="button" className="dash__brand" onClick={() => navigate("/dashboard")} title="Dashboard">
+            <div className="dash__brand-icon">
+              <BoltIcon />
+            </div>
+            <span className="dash__brand-name">VocalHireAI</span>
+          </button>
+        </header>
+        <div className="dash__content">
+          <div className="apt-wrapper" style={{ display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", minHeight: "40vh", gap: 16 }}>
+            <div className="report-loading__spinner" style={{ width: 40, height: 40 }} />
+            <p style={{ margin: 0, fontSize: "1.1rem" }}>Results saved. Continuing to video interview…</p>
+            <p style={{ margin: 0, opacity: 0.8, fontSize: "0.9rem" }}>You&apos;ll see the full report after the coding challenge.</p>
+          </div>
         </div>
       </div>
     );
@@ -510,9 +697,15 @@ export function AptitudeTest() {
             <button type="button" className="dash__topbar-btn" onClick={() => navigate("/dashboard")}>
               ← Dashboard
             </button>
-            <button className="btn btn--primary" onClick={handleRetake}>
-              Take Another Test
-            </button>
+            {fromFullFlow ? (
+              <button className="btn btn--primary" onClick={() => navigate("/interview/professional/new", { state: { fromFullFlow: true } })}>
+                Continue to Video Interview
+              </button>
+            ) : (
+              <button className="btn btn--primary" onClick={handleRetake}>
+                Take Another Test
+              </button>
+            )}
           </div>
         </div>
         </div>
@@ -625,15 +818,6 @@ function ClockIcon() {
     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <circle cx="12" cy="12" r="10" />
       <polyline points="12 6 12 12 16 14" />
-    </svg>
-  );
-}
-
-function BookIcon() {
-  return (
-    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M4 19.5A2.5 2.5 0 016.5 17H20" />
-      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z" />
     </svg>
   );
 }

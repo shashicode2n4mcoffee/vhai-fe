@@ -10,7 +10,7 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate, Navigate } from "react-router-dom";
+import { useNavigate, useLocation, Navigate } from "react-router-dom";
 import { useVoiceChat } from "../hooks/useVoiceChat";
 import { AudioVisualizer } from "./AudioVisualizer";
 import { ConnectionStatus } from "./ConnectionStatus";
@@ -19,9 +19,11 @@ import { FlagsTimeline } from "./FlagsTimeline";
 import { MalpracticeOverlay, type MalpracticeKind } from "./MalpracticeOverlay";
 import { useProctoring } from "../proctoring/useProctoring";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
-import { selectTemplate, selectGuardrails } from "../store/interviewSlice";
-import { setInterviewResult } from "../store/interviewSlice";
+import { selectTemplate, selectGuardrails, selectInterviewId, selectSelectedTemplateNameForFullFlow, setInterviewResult, resetInterview } from "../store/interviewSlice";
 import { saveTranscriptBackup, clearTranscriptBackup } from "../lib/transcriptBackup";
+import { generateReport, computeScoring } from "../lib/report-generator";
+import { saveFullFlowInterview } from "../lib/fullFlowStorage";
+import { useUpdateInterviewMutation } from "../store/endpoints/interviews";
 
 const MAX_DURATION_MS = 27 * 60 * 1000; // 27 minutes max; wrap-up at 26
 
@@ -43,12 +45,14 @@ export function VoiceChat() {
     return <Navigate to="/interview/new" replace />;
   }
 
+  const location = useLocation();
   return (
     <VoiceChatInner
       template={template}
       guardrails={guardrails}
       dispatch={dispatch}
       navigate={navigate}
+      locationState={location.state}
     />
   );
 }
@@ -59,12 +63,18 @@ function VoiceChatInner({
   guardrails,
   dispatch,
   navigate,
+  locationState,
 }: {
   template: NonNullable<ReturnType<typeof selectTemplate>>;
   guardrails: ReturnType<typeof selectGuardrails>;
   dispatch: ReturnType<typeof useAppDispatch>;
   navigate: ReturnType<typeof useNavigate>;
+  locationState?: unknown;
 }) {
+  const interviewId = useAppSelector(selectInterviewId);
+  const templateNameForFullFlow = useAppSelector(selectSelectedTemplateNameForFullFlow);
+  const [updateInterview] = useUpdateInterviewMutation();
+
   const startedRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const interviewStartTs = useRef(Date.now());
@@ -231,7 +241,56 @@ function VoiceChatInner({
       const videoUrl = videoBlob ? URL.createObjectURL(videoBlob) : null;
 
       dispatch(setInterviewResult({ transcript: finalTranscript, videoUrl }));
-      navigate("/interview/report");
+
+      const fromFullFlow = (locationState as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+      if (fromFullFlow) {
+        try {
+          const report = await generateReport(finalTranscript, template);
+          const scoring = computeScoring(report);
+          saveFullFlowInterview({
+            transcript: finalTranscript,
+            report,
+            interviewId,
+          });
+          if (interviewId) {
+            const first = finalTranscript[0];
+            const last = finalTranscript[finalTranscript.length - 1];
+            const durationSeconds =
+              finalTranscript.length >= 2 && first && last
+                ? Math.round((last.timestamp - first.timestamp) / 1000)
+                : 0;
+            await updateInterview({
+              id: interviewId,
+              data: {
+                report,
+                scoring,
+                transcript: finalTranscript,
+                duration: durationSeconds,
+                overallScore: scoring.overallScore,
+                recommendation: scoring.recommendation,
+                status: "COMPLETED",
+              },
+            }).unwrap();
+          }
+        } catch (err) {
+          const { logErrorToServer } = await import("../lib/logError");
+          logErrorToServer(err instanceof Error ? err.message : String(err), {
+            details: err instanceof Error ? err.stack : undefined,
+            source: "voice_chat_full_flow_report",
+          });
+          saveFullFlowInterview({
+            transcript: finalTranscript,
+            report: null,
+            interviewId,
+          });
+        }
+        clearTranscriptBackup();
+        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        dispatch(resetInterview());
+        navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined } });
+      } else {
+        navigate("/interview/report", { state: locationState });
+      }
     } finally {
       endingRef.current = false;
     }

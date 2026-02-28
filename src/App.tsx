@@ -12,6 +12,7 @@
  *   /interview/session       → VoiceChat (protected, requires template)
  *   /interview/report        → ConversationReport (protected, requires transcript)
  *   /interview/report/:id    → InterviewReportView (protected)
+ *   /interview/full          → FullInterviewFlowPage (Aptitude → Video → Coding)
  *   /aptitude                → AptitudeTest (protected)
  *   /aptitude/report/:id     → AptitudeReportView (protected)
  *   /coding                  → CodingTest (protected)
@@ -46,6 +47,8 @@ import { CodingQuestionDetailPage } from "./components/CodingQuestionDetailPage"
 import { ProfessionalInterviewSession } from "./components/ProfessionalInterviewSession";
 import { ProfessionalConsentPage } from "./components/ProfessionalConsentPage";
 import { LiveKitObserverRoom } from "./components/LiveKitObserverRoom";
+import { FullInterviewFlowPage } from "./components/FullInterviewFlowPage";
+import { FullFlowReportPage } from "./components/FullFlowReportPage";
 import { ProtectedRoute } from "./routes/ProtectedRoute";
 import { ToastProvider } from "./components/Toast";
 import "./App.css";
@@ -75,6 +78,8 @@ export default function App() {
             <Route path="/interview/professional/consent" element={<ProfessionalConsentPage />} />
             <Route path="/interview/professional/session" element={<ProfessionalInterviewSession />} />
             <Route path="/interview/observer" element={<LiveKitObserverRoom />} />
+            <Route path="/interview/full" element={<FullInterviewFlowPage />} />
+            <Route path="/interview/full/report" element={<FullFlowReportPage />} />
             <Route path="/aptitude" element={<AptitudeTest />} />
             <Route path="/aptitude/report/:id" element={<AptitudeReportView />} />
             <Route path="/coding" element={<CodingTest />} />

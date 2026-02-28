@@ -66,6 +66,10 @@ export function CodingReportView() {
   }
 
   const { problem, userCode, evaluation, language, difficulty, timeSpent } = detail;
+  const proctoringFlags = (data as { proctoringFlags?: Array<{ type?: string }> }).proctoringFlags ?? [];
+  const hasAdvisoryFlags = proctoringFlags.some(
+    (f) => f.type === "KEYBOARD_ACTIVITY_SUSPICIOUS" || f.type === "SUSPICIOUS_GAZE_SHIFT",
+  );
   const cats = evaluation.categories;
   const categoryList: { key: string; label: string; data: { score: number; feedback: string } }[] = [
     { key: "correctness", label: "Correctness", data: cats.correctness },
@@ -92,6 +96,13 @@ export function CodingReportView() {
             {problem.title} · {LANGUAGE_CONFIG[language]?.label ?? language} · {difficulty} · {formatTime(timeSpent)}
           </p>
         </div>
+
+        {/* Proctoring advisory: keyboard/gaze flags are advisory only */}
+        {hasAdvisoryFlags && (
+          <div className="code-proctoring-advisory" role="note">
+            <strong>Proctoring note (advisory):</strong> This session recorded signals that may indicate use of a second device or reference (e.g. keyboard activity while focus was elsewhere, gaze shifts). These are for examiner review only and do not constitute an automatic penalty.
+          </div>
+        )}
 
         {/* Category breakdown */}
         <h3 className="code-section-title">Skill Breakdown</h3>

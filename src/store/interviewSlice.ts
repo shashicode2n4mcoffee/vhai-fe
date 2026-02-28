@@ -30,6 +30,10 @@ interface InterviewState {
   guardrails: OrgGuardrails | null;
   /** Set by Professional session; shown on report as "Network: Stable/Moderate/Poor" */
   networkQuality: NetworkQuality | null;
+  /** Full flow: selected template id (use existing template for video interview) */
+  selectedTemplateIdForFullFlow: string | null;
+  /** Full flow: selected template name (for display in coding step) */
+  selectedTemplateNameForFullFlow: string | null;
 }
 
 const initialState: InterviewState = {
@@ -39,6 +43,8 @@ const initialState: InterviewState = {
   interviewId: null,
   guardrails: null,
   networkQuality: null,
+  selectedTemplateIdForFullFlow: null,
+  selectedTemplateNameForFullFlow: null,
 };
 
 const interviewSlice = createSlice({
@@ -47,6 +53,15 @@ const interviewSlice = createSlice({
   reducers: {
     setTemplate(state, action: PayloadAction<ConversationTemplate>) {
       state.template = action.payload;
+    },
+    /** Full flow: store selected template and use for video + coding context */
+    setTemplateForFullFlow(
+      state,
+      action: PayloadAction<{ template: ConversationTemplate; templateId: string; templateName: string }>,
+    ) {
+      state.template = action.payload.template;
+      state.selectedTemplateIdForFullFlow = action.payload.templateId;
+      state.selectedTemplateNameForFullFlow = action.payload.templateName;
     },
     setInterviewResult(
       state,
@@ -80,15 +95,19 @@ const interviewSlice = createSlice({
       state.interviewId = null;
       state.guardrails = null;
       state.networkQuality = null;
+      state.selectedTemplateIdForFullFlow = null;
+      state.selectedTemplateNameForFullFlow = null;
     },
   },
 });
 
-export const { setTemplate, setInterviewResult, setInterviewId, setGuardrails, resetInterview } =
+export const { setTemplate, setTemplateForFullFlow, setInterviewResult, setInterviewId, setGuardrails, resetInterview } =
   interviewSlice.actions;
 
 // Selectors
 export const selectTemplate = (state: RootState) => state.interview.template;
+export const selectSelectedTemplateIdForFullFlow = (state: RootState) => state.interview.selectedTemplateIdForFullFlow;
+export const selectSelectedTemplateNameForFullFlow = (state: RootState) => state.interview.selectedTemplateNameForFullFlow;
 export const selectTranscript = (state: RootState) => state.interview.transcript;
 export const selectVideoUrl = (state: RootState) => state.interview.videoUrl;
 export const selectInterviewId = (state: RootState) => state.interview.interviewId;
