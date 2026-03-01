@@ -258,6 +258,7 @@ function VoiceChatInner({
             transcript: finalTranscript,
             report,
             interviewId,
+            videoUrl: videoUrl ?? undefined,
           });
           if (interviewId) {
             const first = finalTranscript[0];
@@ -289,10 +290,11 @@ function VoiceChatInner({
             transcript: finalTranscript,
             report: null,
             interviewId,
+            videoUrl: videoUrl ?? undefined,
           });
         }
         clearTranscriptBackup();
-        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        if (!fromFullFlow && videoUrl) URL.revokeObjectURL(videoUrl);
         navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined }, replace: true });
         setTimeout(() => dispatch(resetInterview()), 0);
       } else {

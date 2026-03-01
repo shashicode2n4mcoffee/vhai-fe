@@ -117,8 +117,9 @@ export function ConversationReport() {
           transcript: transcriptToSave,
           report: reportToSave ?? null,
           interviewId,
+          videoUrl: videoUrl ?? undefined,
         });
-        if (videoUrl) URL.revokeObjectURL(videoUrl);
+        if (!fromFullFlow && videoUrl) URL.revokeObjectURL(videoUrl);
         dispatch(resetInterview());
         navigate("/coding", { state: { fromFullFlow: true, templateName: templateNameForFullFlow ?? undefined } });
       }}
@@ -233,6 +234,7 @@ function ReportInner({
               transcript,
               report: result,
               interviewId,
+              videoUrl: videoUrl ?? undefined,
             });
           }
         }

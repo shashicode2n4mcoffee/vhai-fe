@@ -67,6 +67,7 @@ export function AptitudeTest() {
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [pendingMalpractice, setPendingMalpractice] = useState<MalpracticeKind | null>(null);
   const quizStartTsRef = useRef(0);
+  const recordingRef = useRef<{ recorder: MediaRecorder | null; chunks: Blob[] }>({ recorder: null, chunks: [] });
   const proctoring = useProctoring({
     enabled: phase === "quiz" && !!webcamStream,
     videoRef,
@@ -139,9 +140,22 @@ export function AptitudeTest() {
     setAnswers((prev) => ({ ...prev, [questionId]: optionIndex }));
   };
 
+  const getRecordedVideoUrl = useCallback((): Promise<string | null> => {
+    const { recorder, chunks } = recordingRef.current;
+    if (!recorder || recorder.state === "inactive") return Promise.resolve(null);
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        const blob = chunks.length ? new Blob(chunks, { type: recorder.mimeType }) : null;
+        resolve(blob ? URL.createObjectURL(blob) : null);
+      };
+      if (recorder.state === "recording") recorder.stop();
+    });
+  }, []);
+
   // ---- Submit & evaluate (client-side) ----
   const handleSubmit = async () => {
     if (!quiz) return;
+    const videoUrl = fromFullFlow ? await getRecordedVideoUrl() : null;
     proctoring.stop();
     webcamStream?.getTracks().forEach((t) => t.stop());
     setWebcamStream(null);
@@ -161,6 +175,11 @@ export function AptitudeTest() {
         topic: RS_AGGARWAL_TOPIC.slice(0, 120),
         timeSpentSec: timeSpentSec,
         aptitudeId: aptitudeId ?? undefined,
+        proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+        riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+        quiz: res.quiz,
+        answers: res.answers,
+        videoUrl: videoUrl ?? undefined,
       });
       setPhase("redirecting");
       if (aptitudeId) {
@@ -226,10 +245,11 @@ export function AptitudeTest() {
   };
 
   // ---- Auto-submit when time runs out ----
-  const handleAutoSubmit = useCallback(() => {
+  const handleAutoSubmit = useCallback(async () => {
     if (!quiz || autoSubmittedRef.current) return;
     autoSubmittedRef.current = true;
     toast.error("Time's up! Your answers have been auto-submitted.");
+    const videoUrl = fromFullFlow ? await getRecordedVideoUrl() : null;
     proctoring.stop();
     webcamStream?.getTracks().forEach((t) => t.stop());
     setWebcamStream(null);
@@ -249,6 +269,11 @@ export function AptitudeTest() {
         topic: RS_AGGARWAL_TOPIC.slice(0, 120),
         timeSpentSec: timeSpentSec,
         aptitudeId: aptitudeId ?? undefined,
+        proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+        riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+        quiz: res.quiz,
+        answers: res.answers,
+        videoUrl: videoUrl ?? undefined,
       });
       setPhase("redirecting");
       if (aptitudeId) {
@@ -291,7 +316,7 @@ export function AptitudeTest() {
         },
       }).catch(() => {});
     }
-  }, [quiz, answers, aptitudeId, toast, updateAptitude, proctoring, webcamStream, fromFullFlow, navigate]);
+  }, [quiz, answers, aptitudeId, toast, updateAptitude, proctoring, webcamStream, fromFullFlow, navigate, getRecordedVideoUrl]);
 
   // Request webcam when entering quiz phase (for proctoring)
   useEffect(() => {
@@ -333,6 +358,25 @@ export function AptitudeTest() {
       proctoring.stop();
     };
   }, [phase, webcamStream, proctoring.isReady]);
+
+  // Start webcam recording for full flow report (video only)
+  useEffect(() => {
+    if (phase !== "quiz" || !webcamStream || !fromFullFlow) return;
+    const chunks: Blob[] = [];
+    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((mt) =>
+      MediaRecorder.isTypeSupported(mt),
+    ) || "video/webm";
+    const recorder = new MediaRecorder(webcamStream, { videoBitsPerSecond: 2_500_000, mimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.start(1000);
+    recordingRef.current = { recorder, chunks };
+    return () => {
+      if (recorder.state === "recording") recorder.stop();
+      recordingRef.current = { recorder: null, chunks: [] };
+    };
+  }, [phase, webcamStream, fromFullFlow]);
 
   // Malpractice listeners: tab switch, window switch, fullscreen exit (quiz phase)
   useEffect(() => {

@@ -89,6 +89,7 @@ export function CodingTest() {
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
   const [pendingMalpractice, setPendingMalpractice] = useState<MalpracticeKind | null>(null);
   const editorStartTsRef = useRef(0);
+  const recordingRef = useRef<{ recorder: MediaRecorder | null; chunks: Blob[] }>({ recorder: null, chunks: [] });
   const proctoring = useProctoring({
     enabled: phase === "editor" && !!webcamStream,
     videoRef,
@@ -178,6 +179,25 @@ export function CodingTest() {
     proctoring.start();
     return () => proctoring.stop();
   }, [phase, webcamStream, proctoring.isReady]);
+
+  // Start webcam recording for full flow report (video only)
+  useEffect(() => {
+    if (phase !== "editor" || !webcamStream || !fromFullFlow) return;
+    const chunks: Blob[] = [];
+    const mimeType = ["video/webm;codecs=vp9", "video/webm;codecs=vp8", "video/webm"].find((mt) =>
+      MediaRecorder.isTypeSupported(mt),
+    ) || "video/webm";
+    const recorder = new MediaRecorder(webcamStream, { videoBitsPerSecond: 2_500_000, mimeType });
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data);
+    };
+    recorder.start(1000);
+    recordingRef.current = { recorder, chunks };
+    return () => {
+      if (recorder.state === "recording") recorder.stop();
+      recordingRef.current = { recorder: null, chunks: [] };
+    };
+  }, [phase, webcamStream, fromFullFlow]);
 
   // Malpractice listeners: tab switch, window switch, fullscreen exit (editor phase)
   useEffect(() => {
@@ -280,10 +300,23 @@ export function CodingTest() {
     handleGenerateRef.current?.();
   }, [phase, fromFullFlow, fullFlowTrack, topic]);
 
+  const getRecordedVideoUrl = useCallback((): Promise<string | null> => {
+    const { recorder, chunks } = recordingRef.current;
+    if (!recorder || recorder.state === "inactive") return Promise.resolve(null);
+    return new Promise((resolve) => {
+      recorder.onstop = () => {
+        const blob = chunks.length ? new Blob(chunks, { type: recorder.mimeType }) : null;
+        resolve(blob ? URL.createObjectURL(blob) : null);
+      };
+      if (recorder.state === "recording") recorder.stop();
+    });
+  }, []);
+
   // ---- Submit code for evaluation ----
   const handleSubmit = async () => {
     if (!problem || !code.trim()) return;
     stopTimer();
+    const videoUrl = fromFullFlow ? await getRecordedVideoUrl() : null;
     proctoring.stop();
     webcamStream?.getTracks().forEach((t) => t.stop());
     setWebcamStream(null);
@@ -306,6 +339,9 @@ export function CodingTest() {
           timeSpentSec: timeSpent,
           codingId: codingId ?? undefined,
           evaluation: ev,
+          proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+          riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+          videoUrl: videoUrl ?? undefined,
         });
       }
 
@@ -338,6 +374,11 @@ export function CodingTest() {
           toast.error(saveMsg);
           logErrorToServer(saveMsg, { details: saveErr instanceof Error ? saveErr.stack : undefined, source: "coding" });
         }
+      }
+
+      // Full flow: go to combined report (aptitude + interview + coding + proctoring)
+      if (fromFullFlow) {
+        navigate("/interview/full/report", { replace: true });
       }
     } catch (err) {
       const msg = err instanceof Error ? err.message : "Evaluation failed";
