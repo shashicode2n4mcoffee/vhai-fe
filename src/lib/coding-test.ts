@@ -1,12 +1,10 @@
 /**
- * Coding Test — Problem generation + AI-powered code evaluation via Gemini.
+ * Coding Test — Problem generation + AI-powered code evaluation via DeepSeek (DeepSeek-V3.2).
  *
  * Flow:
  *   1. generateCodingProblem()  → ONE API call to create a challenge
  *   2. evaluateCode()           → ONE API call to rate the submitted code
  *   3. saveCodingRecord()       → persist to localStorage
- *
- * Uses VITE_GEMINI_REPORT_MODEL (cheapest model) for both calls.
  */
 
 // ---------------------------------------------------------------------------
@@ -84,20 +82,15 @@ export const LANGUAGE_CONFIG: Record<
 };
 
 // ---------------------------------------------------------------------------
-// Generate problem (single API call)
+// Generate problem (single API call — DeepSeek-V3.2)
 // ---------------------------------------------------------------------------
-
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export async function generateCodingProblem(
   topic: string,
   language: CodingLanguage,
   difficulty: CodingDifficulty,
 ): Promise<CodingProblem> {
-  const { getGeminiConfig } = await import("./gemini-key");
-  const geminiConfig = await getGeminiConfig();
-  const apiKey = geminiConfig.apiKey;
-  const model = geminiConfig.reportModel;
+  const { callDeepSeek } = await import("./deepseek-client");
   const langLabel = LANGUAGE_CONFIG[language].label;
 
   const prompt = `Generate a coding challenge for the following:
@@ -131,29 +124,11 @@ Rules:
 - Description should be detailed, professional, and clearly formatted.
 - Return ONLY the JSON object, nothing else.`;
 
-  const res = await fetch(
-    `${API_BASE}/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.8,
-          maxOutputTokens: 4096,
-        },
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Problem generation failed (${res.status}): ${body}`);
-  }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = await callDeepSeek(prompt, {
+    temperature: 0.8,
+    maxTokens: 4096,
+    jsonMode: true,
+  });
 
   try {
     const raw = JSON.parse(text);
@@ -173,10 +148,7 @@ export async function evaluateCode(
   language: CodingLanguage,
   timeSpent: number,
 ): Promise<CodeEvaluation> {
-  const { getGeminiConfig } = await import("./gemini-key");
-  const geminiConfig = await getGeminiConfig();
-  const apiKey = geminiConfig.apiKey;
-  const model = geminiConfig.reportModel;
+  const { callDeepSeek } = await import("./deepseek-client");
   const langLabel = LANGUAGE_CONFIG[language].label;
 
   const prompt = `You are an expert ${langLabel} code reviewer. Evaluate the following solution.
@@ -225,29 +197,11 @@ Scoring guidelines:
 - Be specific and constructive in feedback.
 - Return ONLY the JSON object.`;
 
-  const res = await fetch(
-    `${API_BASE}/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.3,
-          maxOutputTokens: 4096,
-        },
-      }),
-    },
-  );
-
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Code evaluation failed (${res.status}): ${body}`);
-  }
-
-  const data = await res.json();
-  const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+  const text = await callDeepSeek(prompt, {
+    temperature: 0.3,
+    maxTokens: 4096,
+    jsonMode: true,
+  });
 
   try {
     const raw = JSON.parse(text);

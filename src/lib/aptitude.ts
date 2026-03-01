@@ -1,9 +1,8 @@
 /**
- * Aptitude Test — Question generation via Gemini REST API.
+ * Aptitude Test — Question generation via DeepSeek API (DeepSeek-V3.2).
  *
  * Cost strategy: ONE API call generates MCQs with correct answers embedded.
  * Evaluation is done entirely client-side (zero additional API calls).
- * Uses VITE_GEMINI_REPORT_MODEL (cheapest model).
  */
 
 // ---------------------------------------------------------------------------
@@ -43,10 +42,8 @@ export interface AptitudeRecord {
 }
 
 // ---------------------------------------------------------------------------
-// Generate questions (single API call)
+// Generate questions (single API call — DeepSeek-V3.2)
 // ---------------------------------------------------------------------------
-
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 export async function generateQuiz(
   topic: string,
@@ -54,10 +51,7 @@ export async function generateQuiz(
   difficulty: "Easy" | "Medium" | "Hard" | "Mixed",
   distributionOverride?: string,
 ): Promise<AptitudeQuiz> {
-  const { getGeminiConfig } = await import("./gemini-key");
-  const geminiConfig = await getGeminiConfig();
-  const apiKey = geminiConfig.apiKey;
-  const model = geminiConfig.reportModel;
+  const { callDeepSeek } = await import("./deepseek-client");
 
   const distributionText =
     distributionOverride ?? (difficulty === "Mixed" ? "8 Easy, 8 Medium, 4 Hard" : `All ${difficulty}`);
@@ -95,32 +89,13 @@ Rules:
 - CRITICAL — "explanation" must be SHORT and CRISP: one sentence only, max 20 words. Example: "LCM(3,5,8)=120. Answer: 120." No working, no alternatives, no "let me assume", no long derivations.
 - Return ONLY the JSON object, nothing else.`;
 
-  const res = await fetch(
-    `${API_BASE}/${model}:generateContent?key=${apiKey}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          responseMimeType: "application/json",
-          temperature: 0.7,
-          maxOutputTokens: 16384,
-        },
-      }),
-    },
-  );
+  const rawText = await callDeepSeek(prompt, {
+    temperature: 0.7,
+    maxTokens: 8192,
+    jsonMode: true,
+  });
 
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Question generation failed (${res.status}): ${body}`);
-  }
-
-  const data = await res.json();
-  const rawText = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
-  const finishReason = data?.candidates?.[0]?.finishReason;
-
-  // Parse JSON, or salvage truncated response (e.g. MAX_TOKENS)
+  // Parse JSON, or salvage truncated response
   let raw: unknown;
   try {
     raw = JSON.parse(rawText);
@@ -134,9 +109,9 @@ Rules:
   }
 
   const quiz = normalizeQuiz(raw, count);
-  if (finishReason === "MAX_TOKENS" && quiz.questions.length < count) {
+  if (quiz.questions.length < count) {
     console.warn(
-      `Aptitude: response was truncated (MAX_TOKENS). Using ${quiz.questions.length} of ${count} questions.`,
+      `Aptitude: using ${quiz.questions.length} of ${count} questions.`,
     );
   }
   return quiz;

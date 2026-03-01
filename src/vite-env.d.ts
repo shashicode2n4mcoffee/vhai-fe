@@ -5,6 +5,7 @@ interface ImportMetaEnv {
   readonly VITE_GEMINI_API_KEY?: string;
   readonly VITE_GEMINI_MODEL?: string;
   readonly VITE_GEMINI_REPORT_MODEL?: string;
+  readonly VITE_DEEPSEEK_API_KEY?: string;
 }
 
 interface ImportMeta {

@@ -1,8 +1,8 @@
 /**
  * Report Generator — Comprehensive AI Interview Evaluation Report
  *
- * Calls Gemini REST API (gemini-2.5-flash-lite) to analyse the interview
- * transcript and produce a structured 20-section evaluation report.
+ * Calls DeepSeek API (DeepSeek-V3.2) to analyse the interview transcript
+ * and produce a structured 20-section evaluation report.
  *
  * Sections 14, 14A, 16, 17 are computed client-side using the automated
  * scoring formula (weights + penalties + confidence adjustment).
@@ -272,25 +272,21 @@ function r1(n: number): number {
 }
 
 // ---------------------------------------------------------------------------
-// API call
+// API call (DeepSeek-V3.2)
 // ---------------------------------------------------------------------------
 
-const API_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 /** Max transcript length (chars) to avoid token limits and timeouts for long interviews (9+ min) */
 const MAX_TRANSCRIPT_CHARS = 420_000;
 /** Request timeout for report generation (long interviews can take 1–2 min) */
 const REPORT_REQUEST_TIMEOUT_MS = 480_000;
-/** Retry once on failure (transient errors / timeouts) */
+/** Retry on failure (transient errors / timeouts) */
 const REPORT_MAX_ATTEMPTS = 3;
 
 export async function generateReport(
   transcript: TranscriptEntry[],
   template: ConversationTemplate,
 ): Promise<EvaluationReport> {
-  const { getGeminiConfig } = await import("./gemini-key");
-  const geminiConfig = await getGeminiConfig();
-  const apiKey = geminiConfig.apiKey;
-  const reportModel = geminiConfig.reportModel;
+  const { callDeepSeek } = await import("./deepseek-client");
 
   let formattedTranscript = transcript
     .map((e) => `[${e.role === "user" ? "Candidate" : "AI Interviewer"}]: ${e.text}`)
@@ -318,30 +314,12 @@ export async function generateReport(
     const timeoutId = setTimeout(() => controller.abort(), REPORT_REQUEST_TIMEOUT_MS);
 
     try {
-      const res = await fetch(
-        `${API_BASE}/${reportModel}:generateContent?key=${apiKey}`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              responseMimeType: "application/json",
-              temperature: 0.3,
-              maxOutputTokens: 8192,
-            },
-          }),
-          signal: controller.signal,
-        },
-      );
-
-      if (!res.ok) {
-        const body = await res.text();
-        throw new Error(`Report generation failed (${res.status}): ${body.slice(0, 500)}`);
-      }
-
-      const data = await res.json();
-      const text = data?.candidates?.[0]?.content?.parts?.[0]?.text ?? "";
+      const text = await callDeepSeek(prompt, {
+        temperature: 0.3,
+        maxTokens: 8192,
+        jsonMode: true,
+        signal: controller.signal,
+      });
 
       try {
         const raw = JSON.parse(text);
