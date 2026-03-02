@@ -26,7 +26,7 @@ const PROGRAMIZ_COMPILER_LANGUAGES: { label: string; path: string }[] = [
 export function CodingQuestionDetailPage() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [compilerLang, setCompilerLang] = useState(PROGRAMIZ_COMPILER_LANGUAGES[0].path);
+  const [compilerLang, setCompilerLang] = useState(PROGRAMIZ_COMPILER_LANGUAGES[0]?.path ?? "javascript/online-compiler");
   const { data: question, isLoading, error } = useGetCodingQuestionQuery(id!, { skip: !id });
 
   const openCompiler = () => {

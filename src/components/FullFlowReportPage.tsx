@@ -362,7 +362,8 @@ function InterviewSection({ result }: { result: FullFlowInterviewResult }) {
         </div>
       )}
 
-      {result.report && typeof result.report === "object" && "strengths" in result.report && (
+      {result.report && typeof result.report === "object" && "strengths" in result.report
+        ? (
         <div className="full-flow-report__subsection">
           <h4 className="eval-sub__title">Strengths</h4>
           <ul className="report-list report-list--green">
@@ -371,7 +372,8 @@ function InterviewSection({ result }: { result: FullFlowInterviewResult }) {
             ))}
           </ul>
         </div>
-      )}
+        )
+        : null}
 
       {result.videoUrl && (
         <div className="full-flow-report__subsection" style={{ marginTop: 16 }}>

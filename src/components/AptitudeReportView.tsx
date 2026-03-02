@@ -11,14 +11,14 @@ export function AptitudeReportView() {
   const navigate = useNavigate();
   const { data, isLoading, isError, error } = useGetAptitudeQuery(id!, { skip: !id });
   const result: AptitudeResult | null = data?.quiz
-    ? {
+    ? ({
         quiz: data.quiz,
-        answers: (data as { answers?: Record<string, string> }).answers ?? {},
+        answers: ((data as { answers?: Record<string, string> }).answers ?? {}) as unknown as Record<number, number>,
         score: (data as { score?: number }).score ?? 0,
         total: (data as { total?: number }).total ?? 0,
         percentage: (data as { percentage?: number }).percentage ?? 0,
         passed: (data as { passed?: boolean }).passed ?? false,
-      }
+      } as AptitudeResult)
     : null;
   const errorMessage = isError && error && "data" in error ? (error as { data?: { error?: string } }).data?.error ?? "Failed to load aptitude test" : null;
 

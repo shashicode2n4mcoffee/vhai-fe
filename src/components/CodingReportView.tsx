@@ -13,14 +13,14 @@ export function CodingReportView() {
   const { data, isLoading, isError, error } = useGetCodingQuery(id!, { skip: !id });
   const detail: CodingDetail | null =
     data?.problem && data?.evaluation
-      ? {
-          problem: (data as { problem: string }).problem,
+      ? ({
+          problem: (data as { problem: unknown }).problem as CodingDetail["problem"],
           userCode: (data as { userCode?: string }).userCode ?? "",
-          evaluation: (data as { evaluation: unknown }).evaluation,
-          language: (data as { language?: string }).language ?? "javascript",
-          difficulty: (data as { difficulty?: string }).difficulty ?? "Medium",
+          evaluation: (data as { evaluation: unknown }).evaluation as CodingDetail["evaluation"],
+          language: ((data as { language?: string }).language ?? "javascript") as CodingDetail["language"],
+          difficulty: ((data as { difficulty?: string }).difficulty ?? "Medium") as CodingDetail["difficulty"],
           timeSpent: (data as { timeSpent?: number }).timeSpent ?? 0,
-        }
+        } as CodingDetail)
       : null;
   const errorMessage = isError && error && "data" in error ? (error as { data?: { error?: string } }).data?.error ?? "Failed to load coding test" : null;
 

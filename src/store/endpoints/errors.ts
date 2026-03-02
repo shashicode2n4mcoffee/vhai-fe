@@ -38,18 +38,11 @@ export interface ErrorLogsResponse {
 const errorsApi = api.injectEndpoints({
   endpoints: (builder) => ({
     logError: builder.mutation<{ id: string }, LogErrorBody>({
-      query: (body, api) => {
-        const user = (api.getState() as { auth?: { user?: { id: string; name: string } | null } }).auth?.user;
-        return {
-          url: "/errors/log",
-          method: "POST",
-          body: {
-            ...body,
-            userId: body.userId ?? user?.id,
-            userName: body.userName ?? user?.name,
-          },
-        };
-      },
+      query: (body) => ({
+        url: "/errors/log",
+        method: "POST",
+        body,
+      }),
       // No invalidatesTags — we don't need to refetch anything on log
     }),
     listErrors: builder.query<

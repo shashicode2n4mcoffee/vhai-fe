@@ -9,13 +9,14 @@ import { useNavigate, useLocation } from "react-router-dom";
 import { useGetLiveKitConfigQuery, useGetLiveKitTokenMutation } from "../store/endpoints/livekit";
 import { Navigate } from "react-router-dom";
 import { useAppSelector } from "../store/hooks";
-import { selectTemplate, selectInterviewId } from "../store/interviewSlice";
+import { selectTemplate, selectInterviewId, selectSelectedTemplateIdForFullFlow } from "../store/interviewSlice";
 
 export function ProfessionalConsentPage() {
   const navigate = useNavigate();
   const location = useLocation();
   const template = useAppSelector(selectTemplate);
   const interviewId = useAppSelector(selectInterviewId);
+  const selectedTemplateId = useAppSelector(selectSelectedTemplateIdForFullFlow);
   const { data: config } = useGetLiveKitConfigQuery();
   const [getToken, { isLoading }] = useGetLiveKitTokenMutation();
   const [error, setError] = useState<string | null>(null);
@@ -48,7 +49,7 @@ export function ProfessionalConsentPage() {
     try {
       const { token, url, roomName, agentDispatched } = await getToken({
         interviewId,
-        templateId: template.id,
+        templateId: template.id ?? selectedTemplateId ?? "",
         participantName: "Candidate",
       }).unwrap();
       navigate("/interview/professional/session", {

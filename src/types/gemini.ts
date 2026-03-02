@@ -138,6 +138,8 @@ export interface GeminiLiveConfig {
 // ---------------------------------------------------------------------------
 
 export interface ConversationTemplate {
+  /** Optional when loaded from API (e.g. professional flow) */
+  id?: string;
   /** How the AI should behave (role, tone, personality) */
   aiBehavior: string;
   /** What the customer is looking for */
