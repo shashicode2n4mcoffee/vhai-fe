@@ -15,6 +15,7 @@ import { useState, useMemo, useEffect } from "react";
 import { useNavigate, useLocation } from "react-router-dom";
 import type { ConversationTemplate } from "../types/gemini";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
+import { selectUser } from "../store/authSlice";
 import {
   setTemplate as storeTemplate,
   setInterviewId,
@@ -25,6 +26,7 @@ import {
 import { useCreateTemplateMutation } from "../store/endpoints/templates";
 import { useCreateInterviewMutation } from "../store/endpoints/interviews";
 import { useListTemplatesQuery } from "../store/endpoints/templates";
+import { useGetSettingsQuery } from "../store/endpoints/settings";
 import { BoltIcon } from "./AppLogo";
 
 // ── Category definitions ──────────────────────────────────────
@@ -73,9 +75,16 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
 
   const [createTemplate] = useCreateTemplateMutation();
   const [createInterview] = useCreateInterviewMutation();
+  const currentUser = useAppSelector(selectUser)!;
+  const { data: settings } = useGetSettingsQuery();
 
   // Fetch public templates from backend
   const { data: templatesData, isLoading: loadingTemplates } = useListTemplatesQuery({ limit: 100 });
+
+  /** Candidates cannot edit resume in template — it's auto-filled from Dashboard upload */
+  const isResumeLockedForCandidate =
+    currentUser.role === "CANDIDATE" &&
+    (settings?.resumeSummary != null && settings.resumeSummary !== "");
 
   // State
   const [step, setStep] = useState<"pick" | "edit">("pick");
@@ -117,7 +126,7 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
     setTemplate({
       aiBehavior: t.aiBehavior,
       customerWants: t.customerWants,
-      candidateOffers: "", // Candidate fills in resume
+      candidateOffers: settings?.resumeSummary ?? "", // Auto-fill from Dashboard upload; candidates cannot edit
     });
     setStep("edit");
   };
@@ -127,7 +136,7 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
     setTemplate({
       aiBehavior: "You are a professional AI interviewer. Conduct a thorough and fair interview. Ask relevant questions based on the job description and candidate's resume. Be professional, friendly, and probe for depth.",
       customerWants: "",
-      candidateOffers: "",
+      candidateOffers: settings?.resumeSummary ?? "",
     });
     setStep("edit");
   };
@@ -354,7 +363,7 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
                 </div>
               </div>
 
-              {/* Section 3: Candidate Resume */}
+              {/* Section 3: Candidate Resume — auto-filled from Dashboard for candidates, read-only */}
               <div className="template-section">
                 <div className="template-section__header">
                   <span className="template-section__number">3</span>
@@ -366,15 +375,21 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
                   </span>
                   <div>
                     <h2 className="template-section__label">Your Resume</h2>
-                    <p className="template-section__desc">Paste your resume in plain text. AI will reference this to ask personalized questions.</p>
+                    <p className="template-section__desc">
+                      {isResumeLockedForCandidate
+                        ? "Your resume summary from the Dashboard is used here. To change it, upload a new resume on the Dashboard."
+                        : "Paste your resume in plain text. AI will reference this to ask personalized questions."}
+                    </p>
                   </div>
                 </div>
                 <textarea
                   className="template-section__textarea template-section__textarea--tall"
                   rows={8}
-                  placeholder={"Paste your resume here...\n\nExample:\nJohn Doe | Software Engineer | 4 years experience\nSkills: React, Node.js, TypeScript, AWS\nEducation: B.Tech Computer Science, XYZ University\nExperience:\n- Built scalable microservices at ABC Corp\n- Led a team of 5 developers\n- Implemented CI/CD pipelines"}
+                  placeholder={isResumeLockedForCandidate ? "" : "Paste your resume here...\n\nExample:\nJohn Doe | Software Engineer | 4 years experience\nSkills: React, Node.js, TypeScript, AWS\nEducation: B.Tech Computer Science, XYZ University\nExperience:\n- Built scalable microservices at ABC Corp\n- Led a team of 5 developers\n- Implemented CI/CD pipelines"}
                   value={template.candidateOffers}
-                  onChange={(e) => handleChange("candidateOffers", e.target.value)}
+                  onChange={(e) => !isResumeLockedForCandidate && handleChange("candidateOffers", e.target.value)}
+                  readOnly={isResumeLockedForCandidate}
+                  aria-readonly={isResumeLockedForCandidate}
                 />
               </div>
 
@@ -384,7 +399,7 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
                   <circle cx="12" cy="12" r="10" /><line x1="12" y1="16" x2="12" y2="12" /><line x1="12" y1="8" x2="12.01" y2="8" />
                 </svg>
                 <div>
-                  <strong>Interview Rules:</strong> Maximum 27 minutes; wrap-up at 26 so the closing statement fits.
+                  <strong>Interview Rules:</strong> Maximum 18 minutes; wrap-up at 17 so the closing statement fits.
                   Your video is recorded locally for your review only — we do not save it on our servers.
                 </div>
               </div>

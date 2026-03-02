@@ -28,7 +28,7 @@ import { saveTranscriptBackup } from "../lib/transcriptBackup";
 import { useGetSettingsQuery } from "../store/endpoints/settings";
 import { useReportLiveKitQualityMutation } from "../store/endpoints/livekit";
 
-const MAX_DURATION_MS = 27 * 60 * 1000; // 27 min max; wrap-up at 26
+const MAX_DURATION_MS = 18 * 60 * 1000; // 18 min max; wrap-up at 17
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);

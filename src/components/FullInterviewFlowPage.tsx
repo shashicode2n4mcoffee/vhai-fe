@@ -12,6 +12,7 @@ import { setTemplateForFullFlow } from "../store/interviewSlice";
 import { initFullFlowReport } from "../lib/fullFlowStorage";
 import { useListTemplatesQuery } from "../store/endpoints/templates";
 import type { Template } from "../store/endpoints/templates";
+import { useGetSettingsQuery } from "../store/endpoints/settings";
 import { BoltIcon } from "./AppLogo";
 
 const CATEGORIES = [
@@ -48,6 +49,7 @@ export function FullInterviewFlowPage() {
   const dispatch = useAppDispatch();
   const [activeCategory, setActiveCategory] = useState("software");
   const { data: templatesData, isLoading } = useListTemplatesQuery({ limit: 100 });
+  const { data: settings } = useGetSettingsQuery();
 
   const groupedTemplates = useMemo(() => {
     const templates = templatesData?.data || [];
@@ -68,7 +70,7 @@ export function FullInterviewFlowPage() {
         template: {
           aiBehavior: t.aiBehavior,
           customerWants: t.customerWants,
-          candidateOffers: "", // Candidate fills resume at video step
+          candidateOffers: settings?.resumeSummary ?? "", // Auto-fill from Dashboard; candidates cannot edit in template step
         },
         templateId: t.id,
         templateName: t.name,

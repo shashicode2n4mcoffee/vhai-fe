@@ -29,6 +29,8 @@ export interface UserSettings {
   livekitScreenShareEnabled?: boolean;
   /** Dispatch LiveKit Agent to room */
   livekitAgentEnabled?: boolean;
+  /** Optimized resume summary (name + skills), max 500 chars; from Dashboard upload */
+  resumeSummary?: string | null;
 }
 
 const settingsApi = api.injectEndpoints({

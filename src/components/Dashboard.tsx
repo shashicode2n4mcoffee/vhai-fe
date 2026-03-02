@@ -5,7 +5,7 @@
  * a new interview, and a history table of past interviews.
  */
 
-import { useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useLocation } from "react-router-dom";
 import { LANGUAGE_CONFIG } from "../lib/coding-test";
 import { useAppDispatch, useAppSelector } from "../store/hooks";
@@ -15,6 +15,8 @@ import { clearGeminiCache } from "../lib/gemini-key";
 import { useGetDashboardQuery } from "../store/endpoints/analytics";
 import { useGetCreditsBalanceQuery } from "../store/endpoints/credits";
 import { useGetLiveKitConfigQuery } from "../store/endpoints/livekit";
+import { useGetSettingsQuery, useUpdateSettingsMutation } from "../store/endpoints/settings";
+import { extractTextFromResumeFile, summarizeResumeWithDeepSeek, validateResumeFile } from "../lib/resume-upload";
 import { BoltIcon } from "./AppLogo";
 import { useToast } from "./Toast";
 
@@ -40,6 +42,42 @@ export function Dashboard() {
   const canStartCoding = isManager || hasCodingCredits;
   const canStartFullFlow = isManager || (hasInterviewCredits && hasAptitudeCredits && hasCodingCredits);
   const toast = useToast();
+  const { data: settings } = useGetSettingsQuery();
+  const [updateSettings] = useUpdateSettingsMutation();
+  const [resumeUploading, setResumeUploading] = useState(false);
+  const [resumeError, setResumeError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleResumeFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const validated = validateResumeFile(file);
+    if (!validated.ok) {
+      toast.error(validated.error);
+      setResumeError(validated.error);
+      return;
+    }
+    setResumeError(null);
+    setResumeUploading(true);
+    try {
+      const rawText = await extractTextFromResumeFile(file);
+      if (!rawText?.trim()) {
+        toast.error("No text could be extracted from the file. Try a different PDF or Word document.");
+        setResumeError("No text extracted");
+        return;
+      }
+      const summary = await summarizeResumeWithDeepSeek(rawText);
+      await updateSettings({ resumeSummary: summary }).unwrap();
+      toast.success("Resume summary saved. It will auto-fill when you start an interview.");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : "Resume upload failed";
+      toast.error(msg);
+      setResumeError(msg);
+    } finally {
+      setResumeUploading(false);
+    }
+  };
 
   useEffect(() => {
     const state = location.state as { fullFlowComplete?: boolean } | null;
@@ -118,6 +156,43 @@ export function Dashboard() {
           <button className="dash__credits-link" onClick={() => navigate("/billing")}>Get more</button>
           <button className="dash__credits-link" onClick={() => navigate("/questions")}>Question Bank</button>
         </div>
+
+        {/* Resume upload — PDF or DOCX only; summary stored and auto-shown in templates for candidates */}
+        <section className="dash__resume-section" aria-labelledby="dash-resume-title">
+          <h2 id="dash-resume-title" className="dash__resume-title">
+            <ResumeIcon />
+            Your Resume
+          </h2>
+          <p className="dash__resume-desc">
+            Upload your resume (PDF or Word .docx only; other types are rejected). We extract text and create a short summary (name + skills) used when you start any interview. It will auto-fill in the template step and cannot be edited there.
+          </p>
+          {settings?.resumeSummary ? (
+            <div className="dash__resume-summary">
+              <div className="dash__resume-summary-label">Saved summary (used in interviews):</div>
+              <div className="dash__resume-summary-text">{settings.resumeSummary}</div>
+            </div>
+          ) : null}
+          <div className="dash__resume-actions">
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+              onChange={handleResumeFileChange}
+              disabled={resumeUploading}
+              className="dash__resume-file-input"
+              aria-label="Upload resume (PDF or Word .docx)"
+            />
+            <button
+              type="button"
+              className="btn btn--secondary dash__resume-btn"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={resumeUploading}
+            >
+              {resumeUploading ? "Extracting & summarizing…" : settings?.resumeSummary ? "Replace resume" : "Upload resume (PDF or .docx)"}
+            </button>
+          </div>
+          {resumeError && <p className="dash__resume-error" role="alert">{resumeError}</p>}
+        </section>
 
         {/* Welcome */}
         <div className="dash__welcome">
@@ -575,6 +650,19 @@ function FlowIcon() {
       <path d="M4.93 19.07l2.83-2.83" />
       <path d="M16.24 7.76l2.83-2.83" />
       <circle cx="12" cy="12" r="3" />
+    </svg>
+  );
+}
+
+function ResumeIcon() {
+  return (
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" />
+      <path d="M12 11h4" />
+      <path d="M12 16h4" />
+      <path d="M8 11h.01" />
+      <path d="M8 16h.01" />
     </svg>
   );
 }

@@ -7231,11 +7231,24 @@ a.dash__topbar-btn {
   background: rgba(99, 102, 241, 0.3);
 }
 .billing-modal-overlay {
-  position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 16px;
 }
 .billing-modal {
-  background: var(--bg-card); border-radius: var(--radius-lg); padding: 24px; max-width: 400px; width: 90%;
-  border: 1px solid rgba(255,255,255,0.08);
+  background: var(--bg-card);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+  max-width: 400px;
+  width: 90%;
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }
 .billing-modal__title { margin: 0 0 8px; font-size: 1.1rem; }
 .billing-modal__text { color: var(--text-muted); font-size: 0.9rem; margin: 0 0 16px; }
@@ -7246,13 +7259,85 @@ a.dash__topbar-btn {
 .admin-grant-modal .admin-grant-field .pg-label { display: block; margin-bottom: 4px; }
 .admin-grant-modal .pg-hint { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; display: block; }
 
-/* Admin templates: wider edit modal */
-.admin-template-modal { max-width: 560px; }
-.admin-template-modal__form { display: flex; flex-direction: column; gap: 14px; margin: 16px 0; }
-.admin-template-modal__label { display: flex; flex-direction: column; gap: 6px; font-size: 0.875rem; color: var(--text-secondary, #a1a1aa); }
-.admin-template-modal__label--row { flex-direction: row; align-items: center; gap: 8px; }
-.admin-template-modal__label .auth-input { width: 100%; margin-bottom: 0; }
-.admin-template-modal__actions { display: flex; gap: 12px; justify-content: flex-end; margin-top: 20px; }
+/* Admin templates: opaque modal, readable form */
+.admin-template-modal {
+  max-width: 560px;
+  width: 100%;
+  background: #13132a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow: 0 24px 48px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.06);
+  padding: 28px 32px;
+}
+.admin-template-modal .billing-modal__title {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin-bottom: 20px;
+  color: var(--text-primary);
+}
+.admin-template-modal__form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  margin: 0;
+}
+.admin-template-modal__label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.admin-template-modal__label--row {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  font-weight: 400;
+}
+.admin-template-modal__label .auth-input,
+.admin-template-modal__label textarea.auth-input {
+  width: 100%;
+  margin-bottom: 0;
+  background: #0d0d1a;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+  padding: 12px 14px;
+  border-radius: var(--radius-md);
+  font-size: 0.9375rem;
+  min-height: 44px;
+}
+.admin-template-modal__label textarea.auth-input {
+  min-height: 88px;
+  resize: vertical;
+}
+.admin-template-modal__label .auth-input::placeholder,
+.admin-template-modal__label textarea.auth-input::placeholder {
+  color: var(--text-muted);
+}
+.admin-template-modal__label .auth-input:focus,
+.admin-template-modal__label textarea.auth-input:focus {
+  border-color: var(--accent-indigo);
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+}
+.admin-template-modal__actions {
+  display: flex;
+  gap: 12px;
+  justify-content: flex-end;
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.admin-template-modal__actions .btn--primary {
+  min-width: 140px;
+}
+.admin-template-modal__actions .btn--secondary {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  color: var(--text-primary);
+}
+.admin-template-modal__actions .btn--secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
 .admin-page__subtitle { font-size: 0.9rem; color: var(--text-muted, #71717a); margin: 0 0 1rem; max-width: 640px; }
 .admin-page__empty { text-align: center; padding: 2rem; color: var(--text-muted); }
 .billing-packs, .billing-history { list-style: none; padding: 0; margin: 0; }
@@ -7274,7 +7359,68 @@ a.dash__topbar-btn {
   border: 1px solid rgba(99,102,241,0.2);
   border-radius: var(--radius-md);
   margin-bottom: 20px;
+}
+
+/* Resume upload section (Dashboard top) */
+.dash__resume-section {
+  background: rgba(17, 17, 39, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius-md);
+  padding: 20px 24px;
+  margin-bottom: 24px;
+}
+.dash__resume-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 8px;
+  color: var(--text-primary);
+}
+.dash__resume-desc {
   font-size: 0.9rem;
+  color: var(--text-muted);
+  margin: 0 0 16px;
+  line-height: 1.45;
+}
+.dash__resume-summary {
+  margin-bottom: 16px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, 0.25);
+  border-radius: var(--radius-sm);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.dash__resume-summary-label {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.dash__resume-summary-text {
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.dash__resume-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.dash__resume-file-input {
+  position: absolute;
+  width: 0;
+  height: 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.dash__resume-btn {
+  flex-shrink: 0;
+}
+.dash__resume-error {
+  margin: 10px 0 0;
+  font-size: 0.875rem;
+  color: var(--accent-red, #ef4444);
 }
 .dash__credits-label { font-weight: 600; color: var(--accent-primary); }
 .dash__credits-link {

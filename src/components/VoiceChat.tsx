@@ -5,8 +5,8 @@
  *   Left  — AI animated orb visualizer
  *   Right — Candidate live webcam recording
  *
- * Shows: question counter, timer (MM:SS / 27:00), wrap-up indicator.
- * Auto-ends at 27 minutes; wrap-up at 26 so closing statement fits.
+ * Shows: question counter, timer (MM:SS / 18:00), wrap-up indicator.
+ * Auto-ends at 18 minutes; wrap-up at 17 so closing statement fits.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -25,7 +25,7 @@ import { generateReport, computeScoring } from "../lib/report-generator";
 import { saveFullFlowInterview } from "../lib/fullFlowStorage";
 import { useUpdateInterviewMutation } from "../store/endpoints/interviews";
 
-const MAX_DURATION_MS = 27 * 60 * 1000; // 27 minutes max; wrap-up at 26
+const MAX_DURATION_MS = 18 * 60 * 1000; // 18 minutes max; wrap-up at 17
 
 function formatTime(ms: number): string {
   const totalSec = Math.floor(ms / 1000);
@@ -195,7 +195,7 @@ function VoiceChatInner({
     };
   }, [state.webcamStream]);
 
-  // Auto-end at 27 minutes hard limit
+  // Auto-end at 18 minutes hard limit
   useEffect(() => {
     if (state.elapsedMs >= MAX_DURATION_MS && !autoEndTriggered.current) {
       autoEndTriggered.current = true;
@@ -404,7 +404,7 @@ function VoiceChatInner({
           <div className={`vc-stat ${timerClass}`}>
             <span className="vc-stat__label">Time</span>
             <span className="vc-stat__value">
-              {formatTime(state.elapsedMs)} / 27:00
+              {formatTime(state.elapsedMs)} / 18:00
             </span>
           </div>
 

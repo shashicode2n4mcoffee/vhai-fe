@@ -1,5 +1,5 @@
 /**
- * AdminTemplatesPage — List and update job (interview) templates.
+ * AdminTemplatesPage — List, add, and update job (interview) templates.
  * For ADMIN, HIRING_MANAGER, COLLEGE. Admins see all templates; others see org + own + public.
  */
 
@@ -9,6 +9,7 @@ import { useAppSelector } from "../store/hooks";
 import { selectUser } from "../store/authSlice";
 import {
   useListTemplatesQuery,
+  useCreateTemplateMutation,
   useUpdateTemplateMutation,
   useDeleteTemplateMutation,
   type Template,
@@ -19,6 +20,14 @@ import { logErrorToServer } from "../lib/logError";
 
 const LIMIT = 20;
 
+const emptyAddForm = {
+  name: "",
+  aiBehavior: "",
+  customerWants: "",
+  candidateOffers: "",
+  isPublic: false,
+};
+
 export function AdminTemplatesPage() {
   const navigate = useNavigate();
   const toast = useToast();
@@ -28,10 +37,15 @@ export function AdminTemplatesPage() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [editModal, setEditModal] = useState<Template | null>(null);
   const [editForm, setEditForm] = useState<Partial<Pick<Template, "name" | "aiBehavior" | "customerWants" | "candidateOffers" | "isPublic">>>({});
+  const [addModalOpen, setAddModalOpen] = useState(false);
+  const [addForm, setAddForm] = useState(emptyAddForm);
 
   const { data, isLoading, refetch } = useListTemplatesQuery({ page, limit: LIMIT });
+  const [createTemplate, { isLoading: creating }] = useCreateTemplateMutation();
   const [updateTemplate, { isLoading: updating }] = useUpdateTemplateMutation();
   const [deleteTemplate, { isLoading: deleting }] = useDeleteTemplateMutation();
+
+  const canAddTemplate = currentUser.role === "ADMIN" || currentUser.role === "HIRING_MANAGER" || currentUser.role === "COLLEGE";
 
   const templates = data?.data ?? [];
   const pagination = data?.pagination;
@@ -54,6 +68,40 @@ export function AdminTemplatesPage() {
     setEditModal(null);
     setEditForm({});
   }, []);
+
+  const openAddModal = useCallback(() => {
+    setAddModalOpen(true);
+    setAddForm(emptyAddForm);
+  }, []);
+
+  const closeAddModal = useCallback(() => {
+    setAddModalOpen(false);
+    setAddForm(emptyAddForm);
+  }, []);
+
+  const handleAddSave = async () => {
+    const { name, aiBehavior, customerWants, candidateOffers, isPublic } = addForm;
+    if (!name?.trim() || !aiBehavior?.trim() || !customerWants?.trim() || !candidateOffers?.trim()) {
+      toast.error("Name, AI behavior, customer wants, and candidate offers are required.");
+      return;
+    }
+    try {
+      await createTemplate({
+        name: name.trim(),
+        aiBehavior: aiBehavior.trim(),
+        customerWants: customerWants.trim(),
+        candidateOffers: candidateOffers.trim(),
+        isPublic: isPublic ?? false,
+      }).unwrap();
+      toast.success("Template created");
+      closeAddModal();
+      refetch();
+    } catch (err: unknown) {
+      const msg = (err as { data?: { error?: string } })?.data?.error ?? "Failed to create template";
+      toast.error(msg);
+      logErrorToServer(msg, { source: "admin_templates" });
+    }
+  };
 
   const handleSave = async () => {
     if (!editModal) return;
@@ -147,12 +195,22 @@ export function AdminTemplatesPage() {
             <div>
               <h1 className="dash__welcome-title">Job Templates</h1>
               <p className="admin-page__subtitle">
-                Select a template and edit to update name, AI behavior, job description, and visibility. Only admins can edit any template; others can edit their own.
+                Add new templates or select one to edit name, AI behavior, job description, and visibility. Only admins can edit any template; others can edit their own.
               </p>
             </div>
           </div>
 
           <div className="admin-page__controls">
+            {canAddTemplate && (
+              <button
+                type="button"
+                className="btn btn--primary"
+                onClick={openAddModal}
+                title="Create a new interview template"
+              >
+                Add template
+              </button>
+            )}
             <button
               type="button"
               className="btn btn--primary"
@@ -323,6 +381,96 @@ export function AdminTemplatesPage() {
                 {updating ? "Saving…" : "Save"}
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add template modal */}
+      {addModalOpen && (
+        <div
+          className="billing-modal-overlay"
+          onClick={closeAddModal}
+          onKeyDown={(e) => e.key === "Escape" && closeAddModal()}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="admin-add-template-modal-title"
+        >
+          <div className="billing-modal admin-template-modal" onClick={(e) => e.stopPropagation()}>
+            <h2 id="admin-add-template-modal-title" className="billing-modal__title">
+              Add template
+            </h2>
+            <form
+              className="admin-template-modal__form"
+              onSubmit={(e) => {
+                e.preventDefault();
+                handleAddSave();
+              }}
+            >
+              <label className="admin-template-modal__label">
+                Name
+                <input
+                  type="text"
+                  className="auth-input"
+                  value={addForm.name}
+                  onChange={(e) => setAddForm((f) => ({ ...f, name: e.target.value }))}
+                  maxLength={200}
+                  placeholder="e.g. Software: Backend Developer"
+                  autoFocus
+                />
+              </label>
+              <label className="admin-template-modal__label">
+                AI behavior
+                <textarea
+                  className="auth-input"
+                  rows={4}
+                  style={{ resize: "vertical", minHeight: "80px" }}
+                  value={addForm.aiBehavior}
+                  onChange={(e) => setAddForm((f) => ({ ...f, aiBehavior: e.target.value }))}
+                  maxLength={5000}
+                  placeholder="Instructions for the AI interviewer..."
+                />
+              </label>
+              <label className="admin-template-modal__label">
+                Customer wants (job description)
+                <textarea
+                  className="auth-input"
+                  rows={3}
+                  style={{ resize: "vertical", minHeight: "60px" }}
+                  value={addForm.customerWants}
+                  onChange={(e) => setAddForm((f) => ({ ...f, customerWants: e.target.value }))}
+                  maxLength={5000}
+                  placeholder="Brief JD for the role (max 300 characters recommended)..."
+                />
+              </label>
+              <label className="admin-template-modal__label">
+                Candidate offers (resume prompt)
+                <textarea
+                  className="auth-input"
+                  rows={3}
+                  style={{ resize: "vertical", minHeight: "60px" }}
+                  value={addForm.candidateOffers}
+                  onChange={(e) => setAddForm((f) => ({ ...f, candidateOffers: e.target.value }))}
+                  maxLength={5000}
+                  placeholder="What the candidate can paste (e.g. resume)..."
+                />
+              </label>
+              <label className="admin-template-modal__label admin-template-modal__label--row">
+                <input
+                  type="checkbox"
+                  checked={addForm.isPublic}
+                  onChange={(e) => setAddForm((f) => ({ ...f, isPublic: e.target.checked }))}
+                />
+                <span>Public (visible to all candidates)</span>
+              </label>
+              <div className="admin-template-modal__actions">
+                <button type="button" className="btn btn--secondary" onClick={closeAddModal}>
+                  Cancel
+                </button>
+                <button type="submit" className="btn btn--primary" disabled={creating}>
+                  {creating ? "Creating…" : "Create template"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
