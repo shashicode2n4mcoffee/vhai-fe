@@ -84,6 +84,10 @@ export function CodingTest() {
   const startTimeRef = useRef(0);
   const timerRef = useRef(0);
 
+  /** Full flow: coding challenge ends after 20 minutes and moves to final report */
+  const FULL_FLOW_CODING_TIME_LIMIT_SEC = 20 * 60;
+  const fullFlowTimeUpTriggeredRef = useRef(false);
+
   // Proctoring (editor phase): webcam + tab/window/fullscreen
   const videoRef = useRef<HTMLVideoElement>(null);
   const [webcamStream, setWebcamStream] = useState<MediaStream | null>(null);
@@ -389,6 +393,58 @@ export function CodingTest() {
     }
   };
 
+  // ---- Full flow: when 20 min elapses, end coding and go to final report ----
+  const handleTimeUp = useCallback(async () => {
+    if (fullFlowTimeUpTriggeredRef.current) return;
+    fullFlowTimeUpTriggeredRef.current = true;
+    if (problem && code.trim()) {
+      handleSubmit();
+      return;
+    }
+    stopTimer();
+    const videoUrl = fromFullFlow ? await getRecordedVideoUrl() : null;
+    proctoring.stop();
+    webcamStream?.getTracks().forEach((t) => t.stop());
+    setWebcamStream(null);
+    saveFullFlowCoding({
+      score: 0,
+      verdict: "Time's up",
+      problemTitle: problem?.title ?? "Coding challenge",
+      language,
+      difficulty: problem?.difficulty ?? difficulty,
+      timeSpentSec: FULL_FLOW_CODING_TIME_LIMIT_SEC,
+      codingId: codingId ?? undefined,
+      proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
+      riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
+      videoUrl: videoUrl ?? undefined,
+    });
+    navigate("/interview/full/report", { replace: true });
+  }, [
+    problem,
+    code,
+    fromFullFlow,
+    stopTimer,
+    getRecordedVideoUrl,
+    proctoring,
+    webcamStream,
+    language,
+    difficulty,
+    codingId,
+    navigate,
+  ]);
+
+  useEffect(() => {
+    if (
+      phase !== "editor" ||
+      !fromFullFlow ||
+      elapsed < FULL_FLOW_CODING_TIME_LIMIT_SEC ||
+      fullFlowTimeUpTriggeredRef.current
+    )
+      return;
+    fullFlowTimeUpTriggeredRef.current = true;
+    void handleTimeUp();
+  }, [phase, fromFullFlow, elapsed, handleTimeUp]);
+
   // ---- Retake (discard) ----
   const handleRetake = () => {
     stopTimer();
@@ -686,9 +742,14 @@ export function CodingTest() {
             <span className="code-topbar__submissions" title="Max 3 submissions allowed">
               Submissions: {submissionCount}/{maxSubmissions}
             </span>
-            <span className="code-topbar__timer">
+            <span
+              className={`code-topbar__timer ${fromFullFlow && elapsed >= FULL_FLOW_CODING_TIME_LIMIT_SEC - 60 ? "code-topbar__timer--warning" : ""}`}
+              title={fromFullFlow ? "20 min limit — auto-submits when time is up" : undefined}
+            >
               <TimerIcon />
-              {formatTime(elapsed)}
+              {fromFullFlow
+                ? `Time left: ${formatTime(Math.max(0, FULL_FLOW_CODING_TIME_LIMIT_SEC - elapsed))}`
+                : formatTime(elapsed)}
             </span>
             <button className="btn btn--ghost" onClick={handleRetake}>
               Discard

@@ -41,6 +41,8 @@ const WRAP_UP_THRESHOLD_MS = MAX_DURATION_MS - WRAP_UP_BEFORE_MS; // 17 minutes 
 const TURN_COMPLETE_TIMEOUT_MS = 15_000;
 /** After sending wrap-up signal, allow up to this long for AI to say closing statement, then auto-end and move to report */
 const WRAP_UP_FALLBACK_MS = 30_000;               // 30 seconds
+/** If user is silent for this long while we're waiting for their answer, AI asks "Are you there?" */
+const SILENCE_PROMPT_AFTER_MS = 3_000;            // 3 seconds
 
 // ---------------------------------------------------------------------------
 // Hook return type
@@ -165,7 +167,7 @@ function buildSystemInstruction(
     "7. Probe deeper with follow-up questions when the candidate gives shallow answers.",
     "8. Keep your responses short and conversational — this is a real-time voice interview.",
     "9. Start by briefly introducing yourself as Christie and the role, then begin with the first question.",
-    "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words ('um', 'uh', 'let me think'), or when they are mid-sentence. The system gives you the turn only after about 1 second of continuous silence — you must wait for that. If they are silent for a long moment (e.g. 4+ seconds), then you may gently prompt. Never start speaking while they might still be in the middle of a sentence or thought.",
+    "10. TURN-TAKING (STRICT): Wait for the candidate to finish their full answer before you respond. Do NOT interrupt or jump in during brief pauses, filler words ('um', 'uh', 'let me think'), or when they are mid-sentence. The system gives you the turn only after about 1 second of continuous silence — you must wait for that. If you are prompted that the candidate has been silent for a few seconds, say briefly and naturally 'Are you there?' or 'Still with me?' and then wait for their response. Never start speaking while they might still be in the middle of a sentence or thought.",
     "11. Conduct the entire interview in English only. All speech and transcript must be in English only. Do not switch to any other language — no exceptions.",
     "12. You may ask up to 15 questions (or until time runs out). When the system sends the wrap-up signal (e.g. after 15 questions or at 17 minutes), give your closing statement and end by 18 minutes.",
     "",
@@ -236,6 +238,10 @@ export function useVoiceChat(
   const stopPromiseRef = useRef<Promise<Blob | null> | null>(null);
   /** Last time we got AI audio or turnComplete; used for turnComplete timeout */
   const lastAiActivityRef = useRef(0);
+  /** When we entered "listening" (waiting for user answer); used for 3s silence → "Are you there?" */
+  const lastListeningStartRef = useRef(0);
+  /** True after we sent the silence prompt this listening period; reset when we enter listening again */
+  const silencePromptSentRef = useRef(false);
   /** Ref to commit-turn logic so timeout and onTurnComplete can share it */
   const commitTurnRef = useRef<() => void>(() => {});
   /** Throttle transcript backup to localStorage (every 2s) */
@@ -312,6 +318,8 @@ export function useVoiceChat(
       }
     }
     setChatPhase("listening");
+    lastListeningStartRef.current = Date.now();
+    silencePromptSentRef.current = false;
     checkLimits();
     if (wrapUpSentRef.current && !wrapUpCompleteFiredRef.current) {
       wrapUpCompleteFiredRef.current = true;
@@ -356,6 +364,23 @@ export function useVoiceChat(
         commitTurnRef.current();
       }
     }, 1000);
+    return () => clearInterval(id);
+  }, [connectionState, chatPhase]);
+
+  // ---- Silence prompt: after 3s with no user speech while waiting, AI asks "Are you there?" ----
+  useEffect(() => {
+    if (connectionState !== "connected" || chatPhase !== "listening") return;
+    if (lastListeningStartRef.current === 0) return; // Not yet waiting for answer (e.g. before first question)
+    const id = setInterval(() => {
+      if (silencePromptSentRef.current) return;
+      const elapsed = Date.now() - lastListeningStartRef.current;
+      if (elapsed >= SILENCE_PROMPT_AFTER_MS) {
+        silencePromptSentRef.current = true;
+        wsClientRef.current?.sendText(
+          "The candidate has been silent for over 3 seconds. Say briefly and naturally: 'Are you there?' or 'Still with me?' and then wait for their response.",
+        );
+      }
+    }, 500);
     return () => clearInterval(id);
   }, [connectionState, chatPhase]);
 

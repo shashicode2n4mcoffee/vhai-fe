@@ -4087,6 +4087,9 @@ a.dash__topbar-btn {
 .code-topbar__timer svg {
   opacity: 0.6;
 }
+.code-topbar__timer--warning {
+  color: var(--accent-amber, #f59e0b);
+}
 
 .code-topbar__submit {
   font-size: 0.82rem;
