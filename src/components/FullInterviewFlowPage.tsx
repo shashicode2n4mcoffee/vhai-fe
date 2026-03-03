@@ -20,6 +20,7 @@ const CATEGORIES = [
   { key: "mba", label: "MBA & Management", icon: "📊" },
   { key: "vlsi", label: "VLSI & Semiconductor", icon: "🔬" },
   { key: "general", label: "General", icon: "📋" },
+  { key: "custom", label: "Custom", icon: "✏️" },
 ] as const;
 
 function getCategoryForTemplate(name: string): string {
@@ -28,6 +29,7 @@ function getCategoryForTemplate(name: string): string {
   if (lower.startsWith("mba:") || lower.startsWith("management:")) return "mba";
   if (lower.startsWith("vlsi:") || lower.startsWith("semiconductor:")) return "vlsi";
   if (lower.startsWith("general:")) return "general";
+  if (lower.startsWith("custom:")) return "custom";
   if (/engineer|developer|devops|qa|cloud|cyber|game|embedded|blockchain|architect|sre|crm|erp|support|ai\/ml|ui\/ux/i.test(lower)) return "software";
   if (/manager|analyst|consultant|marketing|hr |finance|operations|sales|product|strategy|supply|project/i.test(lower)) return "mba";
   if (/vlsi|physical design|verification|dft|analog/i.test(lower)) return "vlsi";
@@ -77,6 +79,11 @@ export function FullInterviewFlowPage() {
       }),
     );
     navigate("/aptitude", { state: { fromFullFlow: true } });
+  };
+
+  /** Custom template: go to template form to define it, then continue to aptitude */
+  const handleCustomTemplate = () => {
+    navigate("/interview/new", { state: { fromFullFlow: true, useCustomTemplate: true } });
   };
 
   return (
@@ -132,6 +139,15 @@ export function FullInterviewFlowPage() {
 
           {isLoading ? (
             <div className="tpl-loading">Loading templates...</div>
+          ) : activeCategory === "custom" ? (
+            <div className="tpl-grid full-flow__tpl-grid">
+              <button type="button" className="tpl-card tpl-card--custom" onClick={handleCustomTemplate}>
+                <span className="tpl-card__icon">✏️</span>
+                <h3 className="tpl-card__title">Custom template</h3>
+                <p className="tpl-card__jd">Define your own job description and AI interviewer behavior. Saved only for you.</p>
+                <span className="tpl-card__arrow">Create custom template →</span>
+              </button>
+            </div>
           ) : (
             <div className="tpl-grid full-flow__tpl-grid">
               {(groupedTemplates[activeCategory] || []).map((t) => (

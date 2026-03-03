@@ -12,13 +12,15 @@ export interface Template {
   customerWants: string;
   candidateOffers: string;
   isPublic: boolean;
+  /** True when created via "Custom" in interview flow; only these can be edited by creator */
+  isCustom: boolean;
   createdAt: string;
   creator: { id: string; name: string };
 }
 
 const templatesApi = api.injectEndpoints({
   endpoints: (builder) => ({
-    createTemplate: builder.mutation<Template, { name: string; aiBehavior: string; customerWants: string; candidateOffers: string; isPublic?: boolean }>({
+    createTemplate: builder.mutation<Template, { name: string; aiBehavior: string; customerWants: string; candidateOffers: string; isPublic?: boolean; isCustom?: boolean }>({
       query: (body) => ({ url: "/templates", method: "POST", body }),
       invalidatesTags: ["Interview"],
     }),

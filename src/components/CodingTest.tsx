@@ -414,6 +414,7 @@ export function CodingTest() {
       difficulty: problem?.difficulty ?? difficulty,
       timeSpentSec: FULL_FLOW_CODING_TIME_LIMIT_SEC,
       codingId: codingId ?? undefined,
+      evaluation: null,
       proctoringFlags: proctoring.flags.length ? proctoring.flags : undefined,
       riskScore: proctoring.riskScore > 0 ? proctoring.riskScore : undefined,
       videoUrl: videoUrl ?? undefined,

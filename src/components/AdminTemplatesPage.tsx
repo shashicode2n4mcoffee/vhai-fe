@@ -168,7 +168,13 @@ export function AdminTemplatesPage() {
     if (selectedIds.size !== 1) return;
     const id = Array.from(selectedIds)[0];
     const t = templates.find((x) => x.id === id);
-    if (t) openEdit(t);
+    if (!t) return;
+    const isOwnCustom = (t.creator?.id === currentUser.id) && (t.isCustom === true);
+    if (!isOwnCustom) {
+      toast.error("You can only edit your own custom templates. Other templates are read-only.");
+      return;
+    }
+    openEdit(t);
   };
 
   const singleSelected = selectedIds.size === 1;
@@ -195,7 +201,7 @@ export function AdminTemplatesPage() {
             <div>
               <h1 className="dash__welcome-title">Job Templates</h1>
               <p className="admin-page__subtitle">
-                Add new templates or select one to edit name, AI behavior, job description, and visibility. Only admins can edit any template; others can edit their own.
+                Add new templates or select one to edit. Only your own custom templates (created via “Custom” in the interview flow) can be edited or deleted; pre-built and others’ templates are read-only. Admins see all templates including everyone’s custom ones.
               </p>
             </div>
           </div>
@@ -240,13 +246,16 @@ export function AdminTemplatesPage() {
                       </th>
                       <th>Name</th>
                       <th>Creator</th>
+                      <th>Custom</th>
                       <th>Public</th>
                       <th>Updated</th>
                       <th>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {templates.map((t) => (
+                    {templates.map((t) => {
+                      const isOwnCustom = (t.creator?.id === currentUser.id) && (t.isCustom === true);
+                      return (
                       <tr key={t.id} className="dash__row">
                         <td>
                           <input
@@ -262,29 +271,34 @@ export function AdminTemplatesPage() {
                           </span>
                         </td>
                         <td>{t.creator?.name ?? "—"}</td>
+                        <td>{t.isCustom ? "Yes" : "—"}</td>
                         <td>{t.isPublic ? "Yes" : "No"}</td>
                         <td>{t.createdAt ? new Date(t.createdAt).toLocaleDateString() : "—"}</td>
                         <td>
                           <span style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-                            <button type="button" className="btn btn--primary btn--sm" onClick={() => openEdit(t)}>
-                              Edit
-                            </button>
-                            {currentUser.role === "ADMIN" && (
-                              <button
-                                type="button"
-                                className="btn btn--danger btn--sm"
-                                onClick={() => handleDelete(t)}
-                                disabled={deleting}
-                              >
-                                Delete
-                              </button>
+                            {isOwnCustom ? (
+                              <>
+                                <button type="button" className="btn btn--primary btn--sm" onClick={() => openEdit(t)}>
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="btn btn--danger btn--sm"
+                                  onClick={() => handleDelete(t)}
+                                  disabled={deleting}
+                                >
+                                  Delete
+                                </button>
+                              </>
+                            ) : (
+                              <span className="text-muted" style={{ fontSize: "0.9rem" }}>Read-only</span>
                             )}
                           </span>
                         </td>
                       </tr>
-                    ))}
+                    ); })}
                     {templates.length === 0 && (
-                      <tr><td colSpan={6} style={{ textAlign: "center", padding: "2rem" }}>No templates found.</td></tr>
+                      <tr><td colSpan={7} style={{ textAlign: "center", padding: "2rem" }}>No templates found.</td></tr>
                     )}
                   </tbody>
                 </table>

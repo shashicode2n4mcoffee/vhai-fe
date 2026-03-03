@@ -20,9 +20,11 @@ import {
   setTemplate as storeTemplate,
   setInterviewId,
   setGuardrails,
+  setTemplateForFullFlow,
   selectTemplate as selectTemplateFromRedux,
   selectSelectedTemplateIdForFullFlow,
 } from "../store/interviewSlice";
+import { initFullFlowReport } from "../lib/fullFlowStorage";
 import { useCreateTemplateMutation } from "../store/endpoints/templates";
 import { useCreateInterviewMutation } from "../store/endpoints/interviews";
 import { useListTemplatesQuery } from "../store/endpoints/templates";
@@ -71,7 +73,9 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
   const dispatch = useAppDispatch();
   const reduxTemplate = useAppSelector(selectTemplateFromRedux);
   const selectedTemplateIdForFullFlow = useAppSelector(selectSelectedTemplateIdForFullFlow);
-  const fromFullFlow = (location.state as { fromFullFlow?: boolean } | null)?.fromFullFlow === true;
+  const locationState = location.state as { fromFullFlow?: boolean; useCustomTemplate?: boolean } | null;
+  const fromFullFlow = locationState?.fromFullFlow === true;
+  const useCustomTemplate = locationState?.useCustomTemplate === true;
 
   const [createTemplate] = useCreateTemplateMutation();
   const [createInterview] = useCreateInterviewMutation();
@@ -106,6 +110,18 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
     setTemplate(reduxTemplate);
     setSelectedTemplateId(selectedTemplateIdForFullFlow);
   }, [fromFullFlow, reduxTemplate, selectedTemplateIdForFullFlow]);
+
+  // Full flow + custom: open directly in edit step with custom defaults (no template selected yet)
+  useEffect(() => {
+    if (!fromFullFlow || !useCustomTemplate || selectedTemplateIdForFullFlow) return;
+    setStep("edit");
+    setSelectedTemplateId(null);
+    setTemplate({
+      aiBehavior: "You are a professional AI interviewer. Conduct a thorough and fair interview. Ask relevant questions based on the job description and candidate's resume. Be professional, friendly, and probe for depth.",
+      customerWants: "",
+      candidateOffers: settings?.resumeSummary ?? "",
+    });
+  }, [fromFullFlow, useCustomTemplate, selectedTemplateIdForFullFlow, settings?.resumeSummary]);
 
   // Group templates by category
   const groupedTemplates = useMemo(() => {
@@ -154,15 +170,46 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
     setError("");
     setIsSubmitting(true);
     try {
-      let templateId: string;
-      if (fromFullFlow && selectedTemplateIdForFullFlow) {
-        templateId = selectedTemplateIdForFullFlow;
-      } else {
+      // Full flow + custom: create template, set for full flow, go to aptitude (no interview yet)
+      if (fromFullFlow && !selectedTemplateIdForFullFlow) {
         const createdTemplate = await createTemplate({
-          name: `Interview ${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+          name: `Custom ${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
           aiBehavior: template.aiBehavior,
           customerWants: template.customerWants,
           candidateOffers: template.candidateOffers,
+          isCustom: true,
+        }).unwrap();
+        initFullFlowReport(createdTemplate.name);
+        dispatch(
+          setTemplateForFullFlow({
+            template: {
+              aiBehavior: template.aiBehavior,
+              customerWants: template.customerWants,
+              candidateOffers: template.candidateOffers,
+            },
+            templateId: createdTemplate.id,
+            templateName: createdTemplate.name,
+          }),
+        );
+        setIsSubmitting(false);
+        navigate("/aptitude", { state: { fromFullFlow: true } });
+        return;
+      }
+
+      let templateId: string;
+      if (fromFullFlow && selectedTemplateIdForFullFlow) {
+        templateId = selectedTemplateIdForFullFlow;
+      } else if (selectedTemplateId) {
+        // Picked an existing template from the list — use it, do not create/save a new one
+        templateId = selectedTemplateId;
+      } else {
+        // Custom template — save only for this user (isCustom: true)
+        const createdTemplate = await createTemplate({
+          name: `Custom ${new Date().toISOString().slice(0, 19).replace(/[:T]/g, "-")}`,
+          aiBehavior: template.aiBehavior,
+          customerWants: template.customerWants,
+          candidateOffers: template.candidateOffers,
+          isCustom: true,
         }).unwrap();
         templateId = createdTemplate.id;
       }
@@ -206,11 +253,11 @@ export function TemplateForm({ variant = "standard" }: TemplateFormProps) {
         </button>
         <div className="dash__user-section">
           <button type="button" className="dash__topbar-btn" onClick={() => {
-            if (step === "edit" && fromFullFlow) navigate("/dashboard");
+            if (step === "edit" && fromFullFlow) navigate("/interview/full");
             else if (step === "edit") setStep("pick");
             else navigate(variant === "professional" ? "/interview/professional" : "/dashboard");
           }}>
-            {step === "edit" && fromFullFlow ? "← Dashboard" : step === "edit" ? "← Back to Templates" : variant === "professional" ? "← Professional Interview" : "← Dashboard"}
+            {step === "edit" && fromFullFlow ? "← Back to template selection" : step === "edit" ? "← Back to Templates" : variant === "professional" ? "← Professional Interview" : "← Dashboard"}
           </button>
         </div>
       </header>
